@@ -1,6 +1,6 @@
 [package]
 name = "spacer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
@@ -22,3 +22,5 @@ self-replace = "1.5"
 flate2 = "1.0"
 tar = "0.4"
 tempfile = "3.17"
+sha2 = "0.10"
+sysinfo = "0.33"

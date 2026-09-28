@@ -9,6 +9,8 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
+mod analysis;
+mod cli;
 mod fs;
 mod ui;
 mod updater;
@@ -18,7 +20,7 @@ use ui::events::handle_events;
 use ui::render::render_ui;
 
 #[derive(Parser, Debug)]
-#[command(name = "spacer", author, version, about = "⚡ Terminal storage space manager with smart waste prioritization & safe batch deletion")]
+#[command(name = "spacer", author, version, about = "⚡ Terminal storage space manager with smart waste prioritization, quick wins cleaner, duplicate detection & treemap")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -32,14 +34,84 @@ struct Cli {
 enum Commands {
     /// Check for updates and update spacer to the latest release
     Update,
+
+    /// Scan and clean up safe-to-delete developer artifacts and caches
+    Clean {
+        /// Target path to scan (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Perform a dry run without deleting anything
+        #[arg(short, long)]
+        dry_run: bool,
+
+        /// Bypass interactive confirmation prompt
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Find duplicate files and optionally deduplicate with hardlinks
+    Dupes {
+        /// Target path to scan (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Automatically replace all duplicate copies with hardlinks
+        #[arg(short, long)]
+        hardlink: bool,
+    },
+
+    /// List top largest storage consumers and waste candidates
+    Top {
+        /// Target path to scan (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Number of top items to display
+        #[arg(short, long, default_value_t = 20)]
+        count: usize,
+    },
+
+    /// Export storage hierarchy and scorecards to JSON or CSV
+    Export {
+        /// Target path to scan (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Path to export JSON file
+        #[arg(long)]
+        json: Option<PathBuf>,
+
+        /// Path to export CSV file
+        #[arg(long)]
+        csv: Option<PathBuf>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
     // Check for CLI subcommands
-    if let Some(Commands::Update) = args.command {
-        return updater::cli::run_cli_update();
+    if let Some(cmd) = args.command {
+        match cmd {
+            Commands::Update => return updater::cli::run_cli_update(),
+            Commands::Clean { path, dry_run, force } => {
+                return cli::clean::run_clean_command(&path, dry_run, force);
+            }
+            Commands::Dupes { path, hardlink } => {
+                return cli::dupes::run_dupes_command(&path, hardlink);
+            }
+            Commands::Top { path, count } => {
+                return cli::top::run_top_command(&path, count);
+            }
+            Commands::Export { path, json, csv } => {
+                if json.is_none() && csv.is_none() {
+                    eprintln!("Please specify --json <file> or --csv <file> to export.");
+                    return Ok(());
+                }
+                return cli::export::run_export_command(&path, json.as_deref(), csv.as_deref());
+            }
+        }
     }
 
     // Set up safe panic hook to restore terminal on unexpected errors

@@ -9,7 +9,10 @@ use ratatui::{
 };
 use crate::fs::deleter::DeleteMode;
 use crate::fs::model::{Category, FileItem};
-use crate::ui::app::{App, ModalState};
+use crate::ui::app::{App, ModalState, ViewMode};
+use crate::ui::components::cleaner_modal::render_cleaner_modal;
+use crate::ui::components::duplicate_modal::render_duplicate_modal;
+use crate::ui::components::treemap::render_treemap;
 use crate::updater::version::UpdateInfo;
 
 pub fn render_ui(frame: &mut Frame, app: &App) {
@@ -36,6 +39,12 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
         ModalState::Help => render_help_modal(frame),
         ModalState::UpdateModal { info, is_updating, error, success } => {
             render_update_modal(frame, info, *is_updating, error.as_deref(), *success);
+        }
+        ModalState::QuickWins { categories, selected_cat_idx, selected_item_idx, .. } => {
+            render_cleaner_modal(frame, categories, *selected_cat_idx, *selected_item_idx);
+        }
+        ModalState::Duplicates { report, selected_group_idx, selected_path_idx, is_scanning, status_msg } => {
+            render_duplicate_modal(frame, report, *selected_group_idx, *selected_path_idx, *is_scanning, status_msg.as_deref());
         }
         ModalState::None => {}
     }
@@ -72,9 +81,23 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
 
     let path_str = app.current_dir.display().to_string();
 
+    let mut line1_spans = vec![
+        Span::styled("⚡ SPACER ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("│ Path: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(path_str, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ];
+
+    if let Some(ref part) = app.partition_info {
+        line1_spans.push(Span::styled(format!(" │ 💾 {} ({}) ", part.mount_point, part.name), Style::default().fg(Color::DarkGray)));
+        line1_spans.push(Span::styled(format!("{:.0}% used ({} free) ", part.used_percent, FileItem::format_size(part.available_bytes)), Style::default().fg(Color::LightCyan)));
+        line1_spans.push(Span::styled(part.format_bar(8), Style::default().fg(Color::Cyan)));
+    }
+
     let mut line2_spans = vec![
         Span::styled("Sort: ", Style::default().fg(Color::DarkGray)),
         Span::styled(format!("[{}] ", app.sort_mode.short_label()), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled("View: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(match app.view_mode { ViewMode::Table => "[LIST] ", ViewMode::Treemap => "[TREEMAP] " }, Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)),
         Span::styled("│ Total: ", Style::default().fg(Color::DarkGray)),
         Span::styled(format!("{} ({} items) ", total_size_str, format_number_commas(items_count)), Style::default().fg(Color::LightCyan)),
         Span::styled("│ Status: ", Style::default().fg(Color::DarkGray)),
@@ -93,11 +116,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let header_text = vec![
-        Line::from(vec![
-            Span::styled("⚡ SPACER ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            Span::styled("│ Path: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(path_str, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(line1_spans),
         Line::from(line2_spans),
     ];
 
@@ -116,7 +135,13 @@ fn render_body(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
         .split(area);
 
-    render_explorer(frame, app, body_chunks[0]);
+    match app.view_mode {
+        ViewMode::Table => render_explorer(frame, app, body_chunks[0]),
+        ViewMode::Treemap => {
+            render_treemap(frame, &app.visible_items(), app.selected_index, body_chunks[0]);
+        }
+    }
+
     render_inspector(frame, app, body_chunks[1]);
 }
 
@@ -218,7 +243,7 @@ fn render_explorer(frame: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(6),         // Waste Score
     ];
 
-    let title = format!(" Explorer ({} items) ", format_number_commas(visible.len()));
+    let title = format!(" Explorer ({} items) [Press 't' for Treemap] ", format_number_commas(visible.len()));
     let table = Table::new(rows, widths)
         .header(
             Row::new(vec![
@@ -438,6 +463,12 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Trash ", Style::default().fg(Color::White)),
             Span::styled(" [D] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
             Span::styled("Permanent ", Style::default().fg(Color::White)),
+            Span::styled(" [t] ", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)),
+            Span::styled("Treemap ", Style::default().fg(Color::White)),
+            Span::styled(" [w] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("QuickWins ", Style::default().fg(Color::White)),
+            Span::styled(" [F] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("Dupes ", Style::default().fg(Color::White)),
             Span::styled(" [s] ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
             Span::styled("Sort ", Style::default().fg(Color::White)),
             Span::styled(" [/] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
@@ -688,7 +719,7 @@ fn render_update_modal(
 }
 
 fn render_help_modal(frame: &mut Frame) {
-    let area = centered_rect(70, 70, frame.area());
+    let area = centered_rect(72, 74, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
@@ -701,16 +732,19 @@ fn render_help_modal(frame: &mut Frame) {
     frame.render_widget(block, area);
 
     let text = vec![
-        Line::from(Span::styled("NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("NAVIGATION & VIEWS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
         Line::from("  ↑ / k           : Move selection up"),
         Line::from("  ↓ / j           : Move selection down"),
-        Line::from("  Enter / → / l   : Enter directory"),
-        Line::from("  Backspace / ← / h: Go to parent directory"),
+        Line::from("  Enter / → / l   : Enter directory / Zoom into treemap block"),
+        Line::from("  Backspace / ← / h: Go to parent directory / Zoom out"),
+        Line::from("  t               : Toggle View Mode (Table List ↔ Squarified Treemap)"),
         Line::from("  g / Home        : Jump to first item"),
         Line::from("  G / End         : Jump to last item"),
         Line::from("  PageUp / PageDn : Scroll by page"),
         Line::from(""),
-        Line::from(Span::styled("DELETION & STAGING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("SMART CLEANUP & DEDUPLICATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+        Line::from("  w               : Open Smart 'Quick Wins' Cleanup Wizard"),
+        Line::from("  F (Shift+f)     : Open Duplicate File Finder & Hardlink Deduplicator"),
         Line::from("  Space           : Toggle stage/unstage item for batch delete"),
         Line::from("  a               : Select/deselect all visible items"),
         Line::from("  c               : Clear all staged items"),

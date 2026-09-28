@@ -2,8 +2,11 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::thread;
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use crate::analysis::cleaner::{scan_quick_wins, WasteCategory};
+use crate::analysis::duplicate::{scan_duplicates, DuplicateReport};
 use crate::fs::deleter::{execute_batch_delete, DeleteMode, DeletionReport};
 use crate::fs::model::FileItem;
+use crate::fs::partition::{get_partition_for_path, PartitionInfo};
 use crate::fs::scanner::{spawn_scanner, ScanMsg};
 use crate::updater::self_update::execute_self_update;
 use crate::updater::version::{check_for_updates, UpdateInfo};
@@ -27,6 +30,12 @@ impl SortMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    Table,
+    Treemap,
+}
+
 #[derive(Debug, Clone)]
 pub enum ModalState {
     None,
@@ -39,6 +48,19 @@ pub enum ModalState {
         error: Option<String>,
         success: bool,
     },
+    QuickWins {
+        categories: Vec<WasteCategory>,
+        selected_cat_idx: usize,
+        selected_item_idx: usize,
+        in_items_pane: bool,
+    },
+    Duplicates {
+        report: DuplicateReport,
+        selected_group_idx: usize,
+        selected_path_idx: usize,
+        is_scanning: bool,
+        status_msg: Option<String>,
+    },
 }
 
 pub struct App {
@@ -47,6 +69,8 @@ pub struct App {
     pub selected_index: usize,
     pub staged_set: HashSet<PathBuf>,
     pub sort_mode: SortMode,
+    pub view_mode: ViewMode,
+    pub partition_info: Option<PartitionInfo>,
     pub is_scanning: bool,
     pub scan_progress_text: String,
     pub total_scanned_bytes: u64,
@@ -68,7 +92,8 @@ impl App {
         let (tx, rx) = unbounded();
         let (update_tx, update_rx) = unbounded();
         let canonical_path = initial_path.canonicalize().unwrap_or(initial_path);
-        
+        let part_info = get_partition_for_path(&canonical_path);
+
         // Spawn non-blocking background update check (with 24h cache)
         thread::spawn(move || {
             let res = check_for_updates(false).unwrap_or(None);
@@ -81,6 +106,8 @@ impl App {
             selected_index: 0,
             staged_set: HashSet::new(),
             sort_mode: SortMode::SizeDesc,
+            view_mode: ViewMode::Table,
+            partition_info: part_info,
             is_scanning: true,
             scan_progress_text: "Initializing scan...".to_string(),
             total_scanned_bytes: 0,
@@ -106,6 +133,7 @@ impl App {
         self.selected_index = 0;
         self.total_scanned_bytes = 0;
         self.total_scanned_items = 0;
+        self.partition_info = get_partition_for_path(&path);
 
         spawn_scanner(path, self.scan_tx.clone());
     }
@@ -296,6 +324,13 @@ impl App {
         self.sort_items();
     }
 
+    pub fn toggle_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            ViewMode::Table => ViewMode::Treemap,
+            ViewMode::Treemap => ViewMode::Table,
+        };
+    }
+
     pub fn sort_items(&mut self) {
         match self.sort_mode {
             SortMode::SizeDesc => {
@@ -339,6 +374,27 @@ impl App {
         self.staged_set.clear();
         self.active_modal = ModalState::DeletionResult(report);
         self.start_scan(self.current_dir.clone());
+    }
+
+    pub fn trigger_quick_wins(&mut self) {
+        let categories = scan_quick_wins(&self.current_dir);
+        self.active_modal = ModalState::QuickWins {
+            categories,
+            selected_cat_idx: 0,
+            selected_item_idx: 0,
+            in_items_pane: false,
+        };
+    }
+
+    pub fn trigger_duplicate_scan(&mut self) {
+        let report = scan_duplicates(&self.current_dir);
+        self.active_modal = ModalState::Duplicates {
+            report,
+            selected_group_idx: 0,
+            selected_path_idx: 0,
+            is_scanning: false,
+            status_msg: None,
+        };
     }
 
     pub fn trigger_update_modal(&mut self) {

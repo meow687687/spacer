@@ -1,6 +1,7 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use std::time::Duration;
-use crate::fs::deleter::DeleteMode;
+use crate::analysis::duplicate::replace_with_hardlinks;
+use crate::fs::deleter::{execute_batch_delete, DeleteMode};
 use crate::ui::app::{App, ModalState};
 
 pub fn handle_events(app: &mut App) -> std::io::Result<()> {
@@ -14,7 +15,7 @@ pub fn handle_events(app: &mut App) -> std::io::Result<()> {
 
 fn handle_key_event(app: &mut App, key: KeyEvent) {
     // 1. If a modal is open, modal handles inputs
-    match &app.active_modal {
+    match &mut app.active_modal {
         ModalState::ConfirmDelete { mode } => {
             let current_mode = *mode;
             match key.code {
@@ -30,6 +31,119 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                         DeleteMode::Permanent => DeleteMode::Trash,
                     };
                     app.active_modal = ModalState::ConfirmDelete { mode: new_mode };
+                }
+                _ => {}
+            }
+            return;
+        }
+        ModalState::QuickWins { categories, selected_cat_idx, selected_item_idx, in_items_pane } => {
+            match key.code {
+                KeyCode::Tab | KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
+                    *in_items_pane = !*in_items_pane;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if *in_items_pane {
+                        if *selected_item_idx > 0 {
+                            *selected_item_idx -= 1;
+                        }
+                    } else {
+                        if *selected_cat_idx > 0 {
+                            *selected_cat_idx -= 1;
+                            *selected_item_idx = 0;
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if *in_items_pane {
+                        if let Some(cat) = categories.get(*selected_cat_idx) {
+                            if *selected_item_idx + 1 < cat.items.len() {
+                                *selected_item_idx += 1;
+                            }
+                        }
+                    } else {
+                        if *selected_cat_idx + 1 < categories.len() {
+                            *selected_cat_idx += 1;
+                            *selected_item_idx = 0;
+                        }
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    if *in_items_pane {
+                        if let Some(cat) = categories.get_mut(*selected_cat_idx) {
+                            if let Some(item) = cat.items.get_mut(*selected_item_idx) {
+                                item.selected = !item.selected;
+                            }
+                        }
+                    } else {
+                        if let Some(cat) = categories.get_mut(*selected_cat_idx) {
+                            let all_sel = cat.items.iter().all(|i| i.selected);
+                            for item in &mut cat.items {
+                                item.selected = !all_sel;
+                            }
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    let mut targets = Vec::new();
+                    for cat in categories {
+                        for item in &cat.items {
+                            if item.selected {
+                                targets.push((item.path.clone(), item.size));
+                            }
+                        }
+                    }
+                    if !targets.is_empty() {
+                        let report = execute_batch_delete(&targets, DeleteMode::Trash);
+                        app.active_modal = ModalState::DeletionResult(report);
+                        app.start_scan(app.current_dir.clone());
+                    } else {
+                        app.active_modal = ModalState::None;
+                    }
+                }
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    app.active_modal = ModalState::None;
+                }
+                _ => {}
+            }
+            return;
+        }
+        ModalState::Duplicates { report, selected_group_idx, selected_path_idx, is_scanning: _, status_msg } => {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if *selected_group_idx > 0 {
+                        *selected_group_idx -= 1;
+                        *selected_path_idx = 0;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if *selected_group_idx + 1 < report.groups.len() {
+                        *selected_group_idx += 1;
+                        *selected_path_idx = 0;
+                    }
+                }
+                KeyCode::Char('h') => {
+                    if let Some(group) = report.groups.get(*selected_group_idx) {
+                        match replace_with_hardlinks(group) {
+                            Ok(count) => {
+                                *status_msg = Some(format!("✓ Successfully hardlinked {} duplicate files in cluster #{}!", count, *selected_group_idx + 1));
+                            }
+                            Err(e) => {
+                                *status_msg = Some(format!("⚠️ Hardlink error: {}", e));
+                            }
+                        }
+                    }
+                }
+                KeyCode::Char('H') => {
+                    let mut total = 0;
+                    for group in &report.groups {
+                        if let Ok(count) = replace_with_hardlinks(group) {
+                            total += count;
+                        }
+                    }
+                    *status_msg = Some(format!("✓ Successfully hardlinked ALL {} duplicate files!", total));
+                }
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
+                    app.active_modal = ModalState::None;
                 }
                 _ => {}
             }
@@ -141,6 +255,15 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('s') => {
             app.cycle_sort();
+        }
+        KeyCode::Char('t') => {
+            app.toggle_view_mode();
+        }
+        KeyCode::Char('w') => {
+            app.trigger_quick_wins();
+        }
+        KeyCode::Char('F') => {
+            app.trigger_duplicate_scan();
         }
         KeyCode::Char('/') => {
             app.is_filtering = true;
