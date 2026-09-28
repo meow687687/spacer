@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spacer Installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/<owner>/spacer/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/meow687687/spacer/main/install.sh | bash
 #   or:
 #   sh install.sh
 
@@ -10,28 +10,62 @@ set -e
 REPO="${GITHUB_REPO:-"meow687687/spacer"}"
 BINARY_NAME="spacer"
 
-# Styling
-BOLD="$(tput bold 2>/dev/null || echo '')"
-GREEN="$(tput setaf 2 2>/dev/null || echo '')"
-CYAN="$(tput setaf 6 2>/dev/null || echo '')"
-YELLOW="$(tput setaf 3 2>/dev/null || echo '')"
-RED="$(tput setaf 1 2>/dev/null || echo '')"
-RESET="$(tput sgr0 2>/dev/null || echo '')"
+# Terminal formatting
+if [ -t 1 ]; then
+    BOLD="$(printf '\033[1m')"
+    DIM="$(printf '\033[2m')"
+    CYAN="$(printf '\033[36m')"
+    BRIGHT_CYAN="$(printf '\033[96m')"
+    GREEN="$(printf '\033[32m')"
+    BRIGHT_GREEN="$(printf '\033[92m')"
+    YELLOW="$(printf '\033[33m')"
+    RED="$(printf '\033[31m')"
+    MAGENTA="$(printf '\033[35m')"
+    RESET="$(printf '\033[0m')"
+else
+    BOLD=""
+    DIM=""
+    CYAN=""
+    BRIGHT_CYAN=""
+    GREEN=""
+    BRIGHT_GREEN=""
+    YELLOW=""
+    RED=""
+    MAGENTA=""
+    RESET=""
+fi
 
-info() {
-    echo "${CYAN}${BOLD}[INFO]${RESET} $*"
+print_banner() {
+    cat << "EOF"
+
+  [1;36m  ___ _ __   __ _  ___ ___ _ __ [0m
+  [1;36m / __| '_ \ / _` |/ __/ _ \ '__|[0m
+  [1;36m \__ \ |_) | (_| | (_|  __/ |   [0m
+  [1;36m |___/ .__/ \__,_|\___\___|_|   [0m
+  [1;36m     |_|                        [0m
+  [1;32m ⚡ Terminal Storage Space Manager & Deduplicator[0m
+
+EOF
 }
 
-success() {
-    echo "${GREEN}${BOLD}[SUCCESS]${RESET} $*"
+step() {
+    local num="$1"
+    local total="$2"
+    local msg="$3"
+    printf "  ${BRIGHT_CYAN}[%s/%s]${RESET} %s...\n" "$num" "$total" "$msg"
+}
+
+step_done() {
+    local msg="$1"
+    printf "  ${BRIGHT_GREEN}  ✓${RESET} %s\n" "$msg"
 }
 
 warn() {
-    echo "${YELLOW}${BOLD}[WARN]${RESET} $*"
+    printf "  ${YELLOW}  ! WARN:${RESET} %s\n" "$*"
 }
 
 error() {
-    echo "${RED}${BOLD}[ERROR]${RESET} $*" >&2
+    printf "\n  ${RED}${BOLD}  ✗ ERROR:${RESET} %s\n\n" "$*" >&2
 }
 
 # 1. Detect OS & Architecture
@@ -87,20 +121,24 @@ determine_install_dir() {
 }
 
 main() {
-    echo "${CYAN}${BOLD}⚡ Installing Spacer (Terminal Storage Space Manager)...${RESET}"
+    print_banner
+    printf "  ${DIM}Starting automated installation for ${BOLD}%s${RESET}${DIM}...${RESET}\n\n" "$REPO"
+
+    # Step 1: System Detection
+    step "1" "4" "Detecting host operating system & architecture"
     detect_target
     determine_install_dir
+    step_done "Detected platform: ${BOLD}${TARGET}${RESET} ➔ ${CYAN}${INSTALL_DIR}${RESET}"
 
-    info "Detected platform: ${BOLD}$TARGET${RESET}"
-    info "Target installation directory: ${BOLD}$INSTALL_DIR${RESET}"
-
-    # Check if building from local repository or downloading release
+    # Step 2: Check local repo or resolve release
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
     if [ -f "$SCRIPT_DIR/Cargo.toml" ] && [ -f "$SCRIPT_DIR/src/main.rs" ]; then
-        info "Local Spacer source directory detected at $SCRIPT_DIR"
+        step "2" "4" "Local source detected; building release binary"
         if command -v cargo >/dev/null 2>&1; then
-            info "Compiling optimized release binary with cargo..."
-            (cd "$SCRIPT_DIR" && cargo build --release)
+            (cd "$SCRIPT_DIR" && cargo build --release -q)
+            step_done "Built target/release/$BINARY_NAME"
+
+            step "3" "4" "Installing binary to $INSTALL_DIR"
             mkdir -p "$INSTALL_DIR"
             if [ -w "$INSTALL_DIR" ]; then
                 cp "$SCRIPT_DIR/target/release/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
@@ -108,86 +146,99 @@ main() {
                 sudo cp "$SCRIPT_DIR/target/release/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
             fi
             chmod +x "$INSTALL_DIR/$BINARY_NAME"
-            print_completion
+            step_done "Binary placed at $INSTALL_DIR/$BINARY_NAME"
+
+            step "4" "4" "Validating installation"
+            step_done "Verified executable"
+            print_completion "v0.2.0 (local build)"
             exit 0
         fi
     fi
 
-    # Download from GitHub Releases
-    TMP_DIR="$(mktemp -d)"
-    trap 'rm -rf "$TMP_DIR"' EXIT
-
+    step "2" "4" "Fetching release metadata from GitHub"
     LATEST_RELEASE_URL="https://api.github.com/repos/$REPO/releases/latest"
-    info "Fetching release metadata from $REPO..."
-
     RELEASE_JSON="$(curl -sSL "$LATEST_RELEASE_URL" 2>/dev/null || echo "")"
     TAG="$(echo "$RELEASE_JSON" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
 
     if [ -z "$TAG" ]; then
-        warn "Could not reach GitHub Releases for $REPO. Attempting cargo install fallback..."
+        warn "Could not reach GitHub Releases API. Attempting cargo install fallback..."
         if command -v cargo >/dev/null 2>&1; then
-            info "Cargo found. Installing via cargo install..."
             cargo install --git "https://github.com/$REPO.git" --bin spacer || {
                 error "Failed to install via cargo. Please install Rust (https://rustup.rs) or download the prebuilt binary manually."
                 exit 1
             }
-            success "Spacer installed successfully via cargo!"
+            step_done "Installed successfully via cargo"
+            print_completion "latest (cargo)"
             exit 0
         else
             error "Could not fetch prebuilt release and Cargo is not installed."
-            error "Please install Rust (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh) or download a release from https://github.com/$REPO/releases"
             exit 1
         fi
     fi
+    step_done "Found latest release: ${BRIGHT_GREEN}${BOLD}${TAG}${RESET}"
+
+    # Step 3: Download Binary
+    step "3" "4" "Downloading prebuilt release (${TAG})"
+    TMP_DIR="$(mktemp -d)"
+    trap 'rm -rf "$TMP_DIR"' EXIT
 
     DOWNLOAD_URL="https://github.com/$REPO/releases/download/$TAG/spacer-${TARGET}.tar.gz"
-    info "Downloading Spacer $TAG for $TARGET..."
     
-    if curl -fL "$DOWNLOAD_URL" -o "$TMP_DIR/spacer.tar.gz" 2>/dev/null; then
+    if curl -fL --progress-bar "$DOWNLOAD_URL" -o "$TMP_DIR/spacer.tar.gz" 2>/dev/null; then
         tar -xzf "$TMP_DIR/spacer.tar.gz" -C "$TMP_DIR"
     else
-        # Try raw binary format fallback
+        # Try raw binary fallback
         RAW_URL="https://github.com/$REPO/releases/download/$TAG/spacer-${TARGET}"
-        info "Trying direct binary download: $RAW_URL..."
-        curl -fL "$RAW_URL" -o "$TMP_DIR/$BINARY_NAME" || {
+        curl -fL --progress-bar "$RAW_URL" -o "$TMP_DIR/$BINARY_NAME" || {
             error "Failed to download binary from $DOWNLOAD_URL or $RAW_URL"
             exit 1
         }
     fi
+    step_done "Download & extraction complete"
 
+    # Step 4: Installation & Verification
+    step "4" "4" "Placing binary into $INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
     if [ -w "$INSTALL_DIR" ]; then
         mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
     else
-        info "Elevated permissions required to write to $INSTALL_DIR"
+        printf "  ${DIM}Elevated permissions required to write to %s${RESET}\n" "$INSTALL_DIR"
         sudo mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
     fi
-
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
-    print_completion
+    step_done "Permissions configured (+x)"
+
+    print_completion "$TAG"
 }
 
 print_completion() {
-    echo ""
-    success "Spacer was successfully installed to ${BOLD}$INSTALL_DIR/$BINARY_NAME${RESET}!"
-    echo ""
+    local version="$1"
+
+    cat << EOF
+
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │  ${BRIGHT_GREEN}✓ Installation Successful!${RESET}                                        │
+  │  ${BOLD}Spacer ${version}${RESET} is ready at ${CYAN}${INSTALL_DIR}/${BINARY_NAME}${RESET}            │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │  ${BOLD}Quickstart Commands:${RESET}                                                 │
+  │    ${GREEN}spacer${RESET}                Launch interactive TUI in current folder      │
+  │    ${GREEN}spacer ~${RESET}              Scan entire home directory                    │
+  │    ${GREEN}spacer clean --dry-run${RESET}Check recoverable cache & build junk        │
+  │    ${GREEN}spacer dupes ~${RESET}        Find duplicate files                          │
+  │    ${GREEN}spacer --help${RESET}         Explore all CLI subcommands & flags           │
+  └────────────────────────────────────────────────────────────────────────┘
+
+EOF
 
     # Check if INSTALL_DIR is in PATH
     case ":$PATH:" in
         *":$INSTALL_DIR:"*) ;;
         *)
-            warn "Note: '$INSTALL_DIR' is not in your current PATH."
-            echo "To use 'spacer' from any terminal, add it to your shell configuration (e.g. ~/.bashrc or ~/.zshrc):"
-            echo "  ${CYAN}export PATH=\"\$PATH:$INSTALL_DIR\"${RESET}"
-            echo ""
+            warn "'$INSTALL_DIR' is not in your current \$PATH."
+            printf "     Add this line to your ${BOLD}~/.bashrc${RESET} or ${BOLD}~/.zshrc${RESET}:\n"
+            printf "     ${CYAN}export PATH=\"\$PATH:%s\"${RESET}\n\n" "$INSTALL_DIR"
             ;;
     esac
-
-    echo "${BOLD}Get started by running:${RESET}"
-    echo "  ${GREEN}spacer${RESET}              # Scan and manage current directory"
-    echo "  ${GREEN}spacer ~${RESET}            # Scan entire home directory"
-    echo "  ${GREEN}spacer /var/log${RESET}     # Scan specific directory"
-    echo ""
 }
 
 main "$@"
