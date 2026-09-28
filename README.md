@@ -1,6 +1,6 @@
 # ⚡ Spacer
 
-> High-performance terminal storage manager with multi-factor waste prioritization and safe staged batch deletion, built in Rust.
+> High-performance terminal storage manager with multi-factor waste prioritization, safe staged batch deletion, and automatic self-updates, built in Rust.
 
 ---
 
@@ -25,20 +25,34 @@ cargo install --git https://github.com/meow687687/spacer.git
 
 ---
 
+## 🔄 Self-Updating
+
+Keep Spacer up to date with a single command:
+
+```bash
+spacer update
+```
+
+Or update directly from within the interactive TUI whenever an update is available:
+* When a new version is released on GitHub, a banner `✨ Update: vX.Y.Z [u]` appears in the top header.
+* Press <kbd>u</kbd> to preview release notes and trigger an instant in-place self-update.
+
+---
+
 ## 🚀 Key Features
 
 * **⚡ Multithreaded Streaming Scanner**: Instantly opens and lets you browse top-level directories within milliseconds while deeply calculating recursive directory sizes asynchronously in the background.
 * **🎯 Multi-Factor Waste Prioritization (0–100 Score)**:
   * **Size Magnitude (45%)**: Logarithmically scaled disk space impact.
   * **Inactivity / Age (30%)**: Scores items that have been untouched for months/years higher.
-  * **Category Heuristics (25%)**: Prioritizes build artifacts (`target/`, `node_modules/`, `.next/`, `build/`, `venv/`), package caches (`.cache/`, `.npm/`, `.cargo-cache/`), temporary files (`*.log`, `*.tmp`, core dumps), and stale archives (`*.tar.gz`, `*.iso`).
+  * **Category Heuristics (25%)**: Prioritizes build artifacts (`target/`, `node_modules/`, `.next/`, `build/`, `venv/`), package caches (`.cache/`, `.npm/`, `.cargo/`, `.bun/`), AI/LLM model caches (`ollama/`, `.lmstudio/`, `*.gguf`), temporary files (`*.log`, `*.tmp`, core dumps), and stale archives (`*.tar.gz`, `*.iso`).
 * **🛡️ Safe Staged Batch Deletion**:
   * Stage individual files or folders with <kbd>Space</kbd> or batch select with <kbd>a</kbd>.
   * Live reclaimable space tracker and marked item preview.
   * Defaults to **Move to System Trash** (<kbd>d</kbd>) with unrecoverable **Permanent Deletion** (<kbd>Shift+D</kbd>) toggle.
   * Full safety confirmation modal before any deletion is executed.
 * **🖥️ Dual-Pane Terminal Dashboard**:
-  * **Left (Explorer)**: File list with visual size bars, category badges, human-readable sizes, and colored waste priority badges.
+  * **Left (Explorer)**: File list with visual size bars, category badges, formatted human sizes, and colored waste priority badges.
   * **Right (Inspector)**: Detailed metadata, access/modified timestamps, priority score breakdown meters, and staged batch queue summary.
 * **🔍 Search & Dynamic Sort**:
   * Instant search filter (<kbd>/</kbd>).
@@ -65,6 +79,7 @@ cargo install --git https://github.com/meow687687/spacer.git
 | <kbd>s</kbd> | Cycle sort order (Size ↓, Priority Score ↓, Age ↓, Name A-Z) |
 | <kbd>/</kbd> | Filter items by name |
 | <kbd>r</kbd> | Rescan current directory |
+| <kbd>u</kbd> | View and install available update |
 | <kbd>?</kbd> | Open Help cheat sheet |
 | <kbd>q</kbd> / <kbd>Ctrl+C</kbd> | Quit |
 
@@ -80,7 +95,10 @@ spacer
 spacer ~
 
 # Scan any specific directory
-spacer /path/to/directory
+spacer /var/log
+
+# Self-update spacer to latest release
+spacer update
 ```
 
 ---

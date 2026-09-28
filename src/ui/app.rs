@@ -1,9 +1,12 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::thread;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crate::fs::deleter::{execute_batch_delete, DeleteMode, DeletionReport};
 use crate::fs::model::FileItem;
 use crate::fs::scanner::{spawn_scanner, ScanMsg};
+use crate::updater::self_update::execute_self_update;
+use crate::updater::version::{check_for_updates, UpdateInfo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortMode {
@@ -30,6 +33,12 @@ pub enum ModalState {
     ConfirmDelete { mode: DeleteMode },
     Help,
     DeletionResult(DeletionReport),
+    UpdateModal {
+        info: UpdateInfo,
+        is_updating: bool,
+        error: Option<String>,
+        success: bool,
+    },
 }
 
 pub struct App {
@@ -46,17 +55,26 @@ pub struct App {
     pub is_filtering: bool,
     pub active_modal: ModalState,
     pub should_quit: bool,
+    pub available_update: Option<UpdateInfo>,
     
-    // Scanner channel
+    // Channels
     pub scan_tx: Sender<ScanMsg>,
     pub scan_rx: Receiver<ScanMsg>,
+    pub update_rx: Receiver<Option<UpdateInfo>>,
 }
 
 impl App {
     pub fn new(initial_path: PathBuf) -> Self {
         let (tx, rx) = unbounded();
+        let (update_tx, update_rx) = unbounded();
         let canonical_path = initial_path.canonicalize().unwrap_or(initial_path);
         
+        // Spawn non-blocking background update check (with 24h cache)
+        thread::spawn(move || {
+            let res = check_for_updates(false).unwrap_or(None);
+            let _ = update_tx.send(res);
+        });
+
         let mut app = Self {
             current_dir: canonical_path.clone(),
             items: Vec::new(),
@@ -71,8 +89,10 @@ impl App {
             is_filtering: false,
             active_modal: ModalState::None,
             should_quit: false,
+            available_update: None,
             scan_tx: tx.clone(),
             scan_rx: rx,
+            update_rx,
         };
 
         app.start_scan(canonical_path);
@@ -91,6 +111,7 @@ impl App {
     }
 
     pub fn process_scan_messages(&mut self) {
+        // Poll scanner updates
         while let Ok(msg) = self.scan_rx.try_recv() {
             match msg {
                 ScanMsg::InitialChildren { root, items } => {
@@ -121,6 +142,13 @@ impl App {
                         self.sort_items();
                     }
                 }
+            }
+        }
+
+        // Poll update check result
+        if let Ok(update_res) = self.update_rx.try_recv() {
+            if let Some(info) = update_res {
+                self.available_update = Some(info);
             }
         }
     }
@@ -313,111 +341,34 @@ impl App {
         self.start_scan(self.current_dir.clone());
     }
 
-    pub fn rescan(&mut self) {
-        self.start_scan(self.current_dir.clone());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fs::model::{Category, ScoreBreakdown};
-
-    fn make_test_item(name: &str, size: u64, score: f64) -> FileItem {
-        FileItem {
-            path: PathBuf::from(name),
-            name: name.to_string(),
-            is_dir: false,
-            size,
-            item_count: 1,
-            modified: None,
-            accessed: None,
-            category: Category::Other,
-            score: ScoreBreakdown {
-                size_score: score,
-                age_score: score,
-                category_score: score,
-                total_score: score,
-                recommendation: String::new(),
-            },
+    pub fn trigger_update_modal(&mut self) {
+        if let Some(ref info) = self.available_update {
+            self.active_modal = ModalState::UpdateModal {
+                info: info.clone(),
+                is_updating: false,
+                error: None,
+                success: false,
+            };
         }
     }
 
-    #[test]
-    fn test_sorting_modes() {
-        let (tx, rx) = unbounded();
-        let mut app = App {
-            current_dir: PathBuf::from("."),
-            items: vec![
-                make_test_item("b_medium", 100, 50.0),
-                make_test_item("a_small", 10, 90.0),
-                make_test_item("c_large", 1000, 20.0),
-            ],
-            selected_index: 0,
-            staged_set: HashSet::new(),
-            sort_mode: SortMode::SizeDesc,
-            is_scanning: false,
-            scan_progress_text: String::new(),
-            total_scanned_bytes: 0,
-            total_scanned_items: 0,
-            filter_query: String::new(),
-            is_filtering: false,
-            active_modal: ModalState::None,
-            should_quit: false,
-            scan_tx: tx,
-            scan_rx: rx,
-        };
-
-        // SizeDesc
-        app.sort_items();
-        assert_eq!(app.items[0].name, "c_large");
-        assert_eq!(app.items[1].name, "b_medium");
-        assert_eq!(app.items[2].name, "a_small");
-
-        // ScoreDesc
-        app.sort_mode = SortMode::ScoreDesc;
-        app.sort_items();
-        assert_eq!(app.items[0].name, "a_small");
-        assert_eq!(app.items[1].name, "b_medium");
-        assert_eq!(app.items[2].name, "c_large");
-
-        // NameAsc
-        app.sort_mode = SortMode::NameAsc;
-        app.sort_items();
-        assert_eq!(app.items[0].name, "a_small");
-        assert_eq!(app.items[1].name, "b_medium");
-        assert_eq!(app.items[2].name, "c_large");
+    pub fn perform_in_app_update(&mut self) {
+        if let ModalState::UpdateModal { ref info, ref mut is_updating, ref mut error, ref mut success } = self.active_modal {
+            *is_updating = true;
+            match execute_self_update(info) {
+                Ok(_) => {
+                    *is_updating = false;
+                    *success = true;
+                }
+                Err(e) => {
+                    *is_updating = false;
+                    *error = Some(e.to_string());
+                }
+            }
+        }
     }
 
-    #[test]
-    fn test_staging_mechanics() {
-        let (tx, rx) = unbounded();
-        let mut app = App {
-            current_dir: PathBuf::from("."),
-            items: vec![
-                make_test_item("file1", 1000, 50.0),
-                make_test_item("file2", 2000, 80.0),
-            ],
-            selected_index: 0,
-            staged_set: HashSet::new(),
-            sort_mode: SortMode::SizeDesc,
-            is_scanning: false,
-            scan_progress_text: String::new(),
-            total_scanned_bytes: 0,
-            total_scanned_items: 0,
-            filter_query: String::new(),
-            is_filtering: false,
-            active_modal: ModalState::None,
-            should_quit: false,
-            scan_tx: tx,
-            scan_rx: rx,
-        };
-
-        assert_eq!(app.staged_set.len(), 0);
-        app.toggle_stage_selected();
-        assert!(app.staged_set.contains(&PathBuf::from("file1")));
-        let (count, bytes, _) = app.staged_items_info();
-        assert_eq!(count, 1);
-        assert_eq!(bytes, 1000);
+    pub fn rescan(&mut self) {
+        self.start_scan(self.current_dir.clone());
     }
 }

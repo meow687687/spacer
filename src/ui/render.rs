@@ -10,6 +10,7 @@ use ratatui::{
 use crate::fs::deleter::DeleteMode;
 use crate::fs::model::{Category, FileItem};
 use crate::ui::app::{App, ModalState};
+use crate::updater::version::UpdateInfo;
 
 pub fn render_ui(frame: &mut Frame, app: &App) {
     let size = frame.area();
@@ -33,6 +34,9 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
         ModalState::ConfirmDelete { mode } => render_delete_confirm_modal(frame, app, *mode),
         ModalState::DeletionResult(report) => render_delete_result_modal(frame, report),
         ModalState::Help => render_help_modal(frame),
+        ModalState::UpdateModal { info, is_updating, error, success } => {
+            render_update_modal(frame, info, *is_updating, error.as_deref(), *success);
+        }
         ModalState::None => {}
     }
 }
@@ -68,25 +72,33 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
 
     let path_str = app.current_dir.display().to_string();
 
+    let mut line2_spans = vec![
+        Span::styled("Sort: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("[{}] ", app.sort_mode.short_label()), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled("│ Total: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("{} ({} items) ", total_size_str, format_number_commas(items_count)), Style::default().fg(Color::LightCyan)),
+        Span::styled("│ Status: ", Style::default().fg(Color::DarkGray)),
+        scan_status_span,
+    ];
+
+    if let Some(ref update) = app.available_update {
+        line2_spans.push(Span::styled(
+            format!("│ ✨ Update: {} [u] ", update.latest_version),
+            Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    if !app.filter_query.is_empty() {
+        line2_spans.push(Span::styled(format!("│ Filter: '{}' ", app.filter_query), Style::default().fg(Color::Yellow)));
+    }
+
     let header_text = vec![
         Line::from(vec![
             Span::styled("⚡ SPACER ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::styled("│ Path: ", Style::default().fg(Color::DarkGray)),
             Span::styled(path_str, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
         ]),
-        Line::from(vec![
-            Span::styled("Sort: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("[{}] ", app.sort_mode.short_label()), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-            Span::styled("│ Total: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ({} items) ", total_size_str, format_number_commas(items_count)), Style::default().fg(Color::LightCyan)),
-            Span::styled("│ Status: ", Style::default().fg(Color::DarkGray)),
-            scan_status_span,
-            if !app.filter_query.is_empty() {
-                Span::styled(format!("│ Filter: '{}' ", app.filter_query), Style::default().fg(Color::Yellow))
-            } else {
-                Span::raw("")
-            },
-        ]),
+        Line::from(line2_spans),
     ];
 
     let header_block = Block::default()
@@ -419,7 +431,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("│ <Enter> Confirm │ <Esc> Clear filter", Style::default().fg(Color::DarkGray)),
         ]
     } else {
-        vec![
+        let mut spans = vec![
             Span::styled(" [Space] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::styled("Stage ", Style::default().fg(Color::White)),
             Span::styled(" [d] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
@@ -432,11 +444,19 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Filter ", Style::default().fg(Color::White)),
             Span::styled(" [r] ", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)),
             Span::styled("Rescan ", Style::default().fg(Color::White)),
-            Span::styled(" [?] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-            Span::styled("Help ", Style::default().fg(Color::White)),
-            Span::styled(" [q] ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-            Span::styled("Quit", Style::default().fg(Color::White)),
-        ]
+        ];
+
+        if app.available_update.is_some() {
+            spans.push(Span::styled(" [u] ", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)));
+            spans.push(Span::styled("Update ", Style::default().fg(Color::LightGreen)));
+        }
+
+        spans.push(Span::styled(" [?] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled("Help ", Style::default().fg(Color::White)));
+        spans.push(Span::styled(" [q] ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled("Quit", Style::default().fg(Color::White)));
+
+        spans
     };
 
     let p = Paragraph::new(Line::from(keymap)).alignment(Alignment::Left);
@@ -562,6 +582,111 @@ fn render_delete_result_modal(frame: &mut Frame, report: &crate::fs::deleter::De
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
 }
 
+fn render_update_modal(
+    frame: &mut Frame,
+    info: &UpdateInfo,
+    is_updating: bool,
+    error: Option<&str>,
+    success: bool,
+) {
+    let area = centered_rect(65, 55, frame.area());
+    frame.render_widget(Clear, area);
+
+    let border_color = if success {
+        Color::Green
+    } else if error.is_some() {
+        Color::Red
+    } else {
+        Color::LightGreen
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .title(format!(" ✨ Spacer Update Available: {} ", info.latest_version))
+        .border_style(Style::default().fg(border_color));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(5),
+            Constraint::Length(3),
+        ])
+        .split(inner);
+
+    let header_lines = vec![
+        Line::from(vec![
+            Span::styled("Current Version: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&info.current_version, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("  ➜  Latest Version: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&info.latest_version, Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
+        ]),
+    ];
+    frame.render_widget(Paragraph::new(header_lines), chunks[0]);
+
+    // Body
+    let body_text = if success {
+        vec![
+            Line::from(Span::styled("✓ Spacer was successfully updated in-place!", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("Please quit and restart spacer to launch the new version."),
+        ]
+    } else if let Some(err) = error {
+        vec![
+            Line::from(Span::styled("⚠️ Update Failed:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))),
+            Line::from(err),
+            Line::from(""),
+            Line::from("You can manually update by running:"),
+            Line::from("  curl -fsSL https://raw.githubusercontent.com/meow687687/spacer/main/install.sh | bash"),
+        ]
+    } else if is_updating {
+        vec![
+            Line::from(Span::styled("⟳ Downloading and replacing binary in-place...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from("Please wait..."),
+        ]
+    } else {
+        let mut lines = vec![
+            Line::from(Span::styled("Release Notes:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        ];
+        for line in info.release_notes.lines().take(10) {
+            lines.push(Line::from(format!("  {}", line)));
+        }
+        lines
+    };
+
+    let body_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" Information ");
+    frame.render_widget(Paragraph::new(body_text).block(body_block).wrap(Wrap { trim: true }), chunks[1]);
+
+    // Action footer
+    let footer_text = if success || error.is_some() {
+        vec![
+            Line::from(Span::styled("Press <Enter> or <Esc> to dismiss", Style::default().fg(Color::DarkGray))),
+        ]
+    } else if is_updating {
+        vec![
+            Line::from(Span::styled("Updating in progress...", Style::default().fg(Color::DarkGray))),
+        ]
+    } else {
+        vec![
+            Line::from(vec![
+                Span::styled("Press ", Style::default().fg(Color::DarkGray)),
+                Span::styled("<Enter>", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
+                Span::styled(" to UPDATE NOW in-place, or ", Style::default().fg(Color::DarkGray)),
+                Span::styled("<Esc>", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(" to Dismiss", Style::default().fg(Color::DarkGray)),
+            ]),
+        ]
+    };
+    frame.render_widget(Paragraph::new(footer_text).alignment(Alignment::Center), chunks[2]);
+}
+
 fn render_help_modal(frame: &mut Frame) {
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
@@ -592,10 +717,11 @@ fn render_help_modal(frame: &mut Frame) {
         Line::from("  d               : Open deletion confirmation (Move to System Trash)"),
         Line::from("  D (Shift+d)     : Open permanent deletion confirmation (Unrecoverable rm)"),
         Line::from(""),
-        Line::from(Span::styled("SORTING & FILTERING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("SORTING, FILTERING & UPDATES", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
         Line::from("  s               : Cycle sort order (Size ↓, Priority Score ↓, Age ↓, Name A-Z)"),
         Line::from("  /               : Filter items by name"),
         Line::from("  r               : Refresh / rescan current directory"),
+        Line::from("  u               : View and install available update"),
         Line::from(""),
         Line::from(Span::styled("PRIORITIZATION SCORE (0 - 100)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
         Line::from("  Spacer computes a multi-factor score to identify waste:"),

@@ -1,7 +1,7 @@
 use std::io::stdout;
 use std::path::PathBuf;
 use std::panic;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::{
     event::DisableMouseCapture,
     execute,
@@ -11,6 +11,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 mod fs;
 mod ui;
+mod updater;
 
 use ui::app::App;
 use ui::events::handle_events;
@@ -19,13 +20,27 @@ use ui::render::render_ui;
 #[derive(Parser, Debug)]
 #[command(name = "spacer", author, version, about = "⚡ Terminal storage space manager with smart waste prioritization & safe batch deletion")]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Directory path to analyze and manage
     #[arg(default_value = ".")]
     path: PathBuf,
 }
 
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Check for updates and update spacer to the latest release
+    Update,
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
+
+    // Check for CLI subcommands
+    if let Some(Commands::Update) = args.command {
+        return updater::cli::run_cli_update();
+    }
 
     // Set up safe panic hook to restore terminal on unexpected errors
     let original_hook = panic::take_hook();
@@ -47,7 +62,7 @@ fn main() -> anyhow::Result<()> {
 
     // Main event loop
     while !app.should_quit {
-        // Poll scanner background updates
+        // Poll scanner background updates & update checker
         app.process_scan_messages();
 
         // Render TUI

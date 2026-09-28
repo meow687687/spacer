@@ -35,6 +35,27 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
             }
             return;
         }
+        ModalState::UpdateModal { success, error, .. } => {
+            if *success || error.is_some() {
+                match key.code {
+                    KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char(' ') => {
+                        app.active_modal = ModalState::None;
+                    }
+                    _ => {}
+                }
+            } else {
+                match key.code {
+                    KeyCode::Enter => {
+                        app.perform_in_app_update();
+                    }
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        app.active_modal = ModalState::None;
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
         ModalState::Help | ModalState::DeletionResult(_) => {
             match key.code {
                 KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char(' ') => {
@@ -126,6 +147,11 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('r') => {
             app.rescan();
+        }
+        KeyCode::Char('u') | KeyCode::Char('U') => {
+            if app.available_update.is_some() {
+                app.trigger_update_modal();
+            }
         }
         KeyCode::Char('?') => {
             app.active_modal = ModalState::Help;
