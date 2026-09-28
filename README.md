@@ -1,106 +1,145 @@
-# ⚡ Spacer v0.2.0
+# spacer
 
-> High-performance terminal storage manager with multi-factor waste prioritization, smart one-click cleanup, fast duplicate detection with hardlink deduplication, interactive squarified treemap visualizer, real-time partition monitor, and automatic self-updates, built in Rust.
+A fast, interactive terminal disk space manager written in Rust.
+
+`spacer` scans your directories in real time, prioritizes what's actually safe to delete (caches, old build artifacts, dead logs), and lets you clean up gigabytes in seconds without accidentally nuking your important files.
+
+```
+⚡ SPACER │ Path: /home/user │ 💾 /home (/dev/nvme0n1p2) 84% used (79.2 GB free) [████████░░]
+Sort: [SIZE] View: [LIST] │ Total: 142.8 GB (315 items) │ Status: ✓ Ready
+┌── Explorer ─────────────────────────────────┐┌── Inspector ──────────────────────────────┐
+│ [✓] 📁 .local       [FILE]      ████ 69.7 GB ││ Path: /home/user/.cache                   │
+│ [ ] 📁 .cache       [PKG-CACHE] ██░░ 29.8 GB ││ Type: Directory (822,476 items)           │
+│ [✓] 📁 .npm         [PKG-CACHE] █░░░ 11.7 GB ││ Size: 29.77 GB (31,963,566,457 bytes)     │
+│ [ ] 📁 .rustup      [PKG-CACHE] ░░░░  2.6 GB ││                                           │
+│ [✓] 📁 target       [DEV-BUILD] ░░░░  2.1 GB ││ Deletion Priority: 88/100 (HIGH WASTE)    │
+│ [ ] 📁 .gradle      [DEV-BUILD] ░░░░  1.3 GB ││ • Size Impact:      100/100 [■■■■■■■■■■]  │
+│ [ ] 📁 .bun         [PKG-CACHE] ░░░░  1.2 GB ││ • Inactivity/Age:   85/100  [■■■■■■■■  ]  │
+│ [ ] 📁 .lmstudio    [AI-MODEL]  ░░░░  6.2 GB ││ • Category Heuristic:95/100 [■■■■■■■■■ ]  │
+└─────────────────────────────────────────────┘└───────────────────────────────────────────┘
+ [Space] Stage  [d] Trash  [D] Permanent  [t] Treemap  [w] QuickWins  [F] Dupes  [s] Sort  [q] Quit
+```
 
 ---
 
-## ⚡ Quick Install
+## Quick Install
 
-### Via `curl` (Recommended)
+### One-line installer (Linux & macOS)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/meow687687/spacer/main/install.sh | bash
 ```
 
-### Via `install.sh`
+### From source (Cargo)
+```bash
+cargo install --git https://github.com/meow687687/spacer.git
+```
+
+### From local clone
 ```bash
 git clone https://github.com/meow687687/spacer.git
 cd spacer
 ./install.sh
 ```
 
-### Via `cargo`
-```bash
-cargo install --git https://github.com/meow687687/spacer.git
-```
+---
+
+## What makes spacer different?
+
+Most disk usage tools (`ncdu`, `dua`, `dust`) show you raw sizes, but leave you guessing whether a 10 GB folder is a critical virtual machine image or just disposable `node_modules` from a tutorial project you haven't touched in 8 months.
+
+`spacer` combines size analysis with heuristic waste scoring and safe batch operations:
+
+* **Instant UI feedback**: Starts streaming top-level folder sizes immediately while indexing deep subtrees asynchronously in the background.
+* **Waste Prioritization (0–100 Score)**: Combines size footprint (45%), inactivity/age (30%), and category rules (25%) so rebuildable dev junk floats straight to the top.
+* **Smart "Quick Wins" Wizard (`w` / `spacer clean`)**: One-key discovery of safe targets (`target/`, `.npm`, `~/.cache`, huggingface model blobs, core dumps).
+* **Duplicate Detection + Hardlinks (`F` / `spacer dupes`)**: Finds byte-identical files using a 3-stage hashing pipeline (Size $\rightarrow$ 4KB prefix $\rightarrow$ SHA-256) and can replace duplicates with hardlinks (`ln -f`) to reclaim 100% of the duplicate space without breaking file paths.
+* **Dual views**: Switch instantly between the classic table explorer and an interactive squarified treemap (`t`) with zoom in (`Enter`) and zoom out (`Backspace`).
+* **Safe by default**: Deletions default to System Trash (`~/.local/share/Trash` via Freedesktop spec) with full confirmation dialogs, so mistakes are easily undone.
 
 ---
 
-## 🚀 Key Features
+## Keybindings
 
-* **⚡ Multithreaded Streaming Scanner**: Instantly opens and lets you browse top-level directories in milliseconds while deeply calculating recursive directory sizes asynchronously in the background.
-* **💾 Drive & Partition Monitor**: Live hardware partition status in the header showing filesystem type, capacity used/free, and visual usage meter.
-* **🧹 Smart "Quick Wins" Cleanup Wizard (<kbd>w</kbd> / `spacer clean`)**:
-  * One-click discovery of safe-to-clean developer artifacts (`target/`, `node_modules/`, `.next/`, `build/`, `venv/`), package caches (`~/.npm`, `~/.cargo/registry/cache`, `~/.cache`), AI model caches (`.cache/huggingface`, `.lmstudio/models`), and log dumps.
-* **👥 3-Phase Fast Duplicate File Finder (<kbd>F</kbd> / `spacer dupes`)**:
-  * Groups identical files via exact byte size $\rightarrow$ 4KB prefix hash $\rightarrow$ full SHA-256.
-  * **🔗 Hardlink Deduplication**: Replace duplicate copies with hardlinks (`ln -f`) to reclaim **100% of wasted space** while keeping all files intact!
-* **🗺️ Interactive Squarified Treemap View (<kbd>t</kbd>)**:
-  * Seamlessly toggle between the Explorer Table List and a proportional geometric block map (like Diskonaut/Baobab).
-  * Zoom in (<kbd>Enter</kbd>) and Zoom out (<kbd>Backspace</kbd>).
-* **🎯 Multi-Factor Waste Prioritization (0–100 Score)**:
-  * Size (45%) + Inactivity/Age (30%) + Category Heuristics (25%).
-* **🛡️ Safe Staged Batch Deletion**:
-  * Stage items with <kbd>Space</kbd> or <kbd>a</kbd>, preview reclaimable space, and move to System Trash (<kbd>d</kbd>) or Permanent Delete (<kbd>Shift+D</kbd>).
-* **🔄 In-Place Self-Updates (`spacer update` / <kbd>u</kbd>)**:
-  * Checks GitHub Releases with a 24-hour cache and performs zero-downtime binary replacement in-place.
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-| Shortcut | Action |
+### Navigation & Views
+| Key | Action |
 |---|---|
-| <kbd>↑</kbd> / <kbd>k</kbd> | Move cursor up |
-| <kbd>↓</kbd> / <kbd>j</kbd> | Move cursor down |
-| <kbd>Enter</kbd> / <kbd>→</kbd> / <kbd>l</kbd> | Enter directory / Zoom into Treemap block |
-| <kbd>Backspace</kbd> / <kbd>←</kbd> / <kbd>h</kbd> | Navigate to parent / Zoom out Treemap |
-| <kbd>t</kbd> | Toggle View Mode (Table List ↔ Squarified Treemap) |
-| <kbd>w</kbd> | Open Smart "Quick Wins" Cleanup Wizard |
-| <kbd>F</kbd> (Shift+f) | Open Duplicate File Finder & Hardlink Deduplicator |
-| <kbd>Space</kbd> | Toggle stage/unstage for batch deletion |
-| <kbd>a</kbd> | Stage/unstage all visible items |
-| <kbd>c</kbd> | Clear all staged items |
-| <kbd>d</kbd> | Open confirmation modal (Move to System Trash) |
-| <kbd>Shift+D</kbd> | Open permanent deletion confirmation (Unrecoverable rm) |
-| <kbd>s</kbd> | Cycle sort order (Size ↓, Priority Score ↓, Age ↓, Name A-Z) |
-| <kbd>/</kbd> | Filter items by name |
-| <kbd>r</kbd> | Rescan current directory |
-| <kbd>u</kbd> | View and install available update |
-| <kbd>?</kbd> | Open Help cheat sheet |
-| <kbd>q</kbd> / <kbd>Ctrl+C</kbd> | Quit |
+| `k` / `↑` | Move cursor up |
+| `j` / `↓` | Move cursor down |
+| `Enter` / `l` / `→` | Enter directory / Zoom into treemap block |
+| `Backspace` / `h` / `←` | Parent directory / Zoom out treemap |
+| `t` | Toggle View Mode (Table List ↔ Squarified Treemap) |
+| `g` / `Home` | Jump to first item |
+| `G` / `End` | Jump to last item |
+
+### Cleanup & Deletion
+| Key | Action |
+|---|---|
+| `Space` | Toggle stage/unstage for batch delete |
+| `a` | Select / deselect all visible items |
+| `c` | Clear staged selection |
+| `d` | Open deletion confirmation (**Move to Trash**) |
+| `D` (`Shift+D`) | Open permanent deletion confirmation (`rm -rf`) |
+| `w` | Open **Quick Wins** cleanup wizard |
+| `F` (`Shift+F`) | Open **Duplicate File Finder** & hardlink deduplicator |
+
+### Sorting & Search
+| Key | Action |
+|---|---|
+| `s` | Cycle sort (Size ↓, Waste Score ↓, Age ↓, Name A-Z) |
+| `/` | Filter items by name in real time |
+| `r` | Rescan current folder |
+| `u` | View and trigger in-place update (when new version is available) |
+| `?` | Help screen |
+| `q` | Quit |
 
 ---
 
-## 🛠️ CLI Subcommands Suite
+## CLI Commands
+
+You can also run `spacer` headlessly in scripts or terminals without opening the TUI:
 
 ```bash
-# Launch interactive TUI
+# Launch interactive TUI (defaults to current directory)
 spacer [PATH]
 
-# Top largest items & waste candidates
+# Print top 20 largest files/directories
 spacer top 20 --path ~
 
-# Smart Quick Wins cleanup (dry-run or interactive)
+# Dry-run Quick Wins cleanup to see how much space can be freed
 spacer clean --dry-run
 spacer clean --path ~
 
-# Find duplicates & optionally replace with hardlinks
-spacer dupes /path/to/folder
-spacer dupes /path/to/folder --hardlink
+# Scan for duplicates and print identical file clusters
+spacer dupes ~
 
-# Export complete scan tree and scorecards to JSON / CSV
-spacer export --path ~ --json /tmp/storage_report.json
-spacer export --path ~ --csv /tmp/storage_report.csv
+# Replace all duplicate files with hardlinks in one command
+spacer dupes /path/to/data --hardlink
 
-# Self-update to latest release
+# Export full directory tree and waste scores for audits
+spacer export --path ~ --json report.json --csv report.csv
+
+# Self-update binary in-place to the latest GitHub release
 spacer update
 ```
 
 ---
 
-## 🧪 Testing
+## Build & Test
 
-Run all unit tests:
+Requires Rust 1.80+ (edition 2024 / 2021).
+
 ```bash
+# Run test suite
 cargo test
+
+# Build optimized binary
+cargo build --release
+
+# Binary will be at target/release/spacer
 ```
+
+---
+
+## License
+
+MIT License.
