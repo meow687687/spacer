@@ -49,6 +49,7 @@ pub fn calculate_score(
         Category::DevArtifact => 95.0,
         Category::LogsAndTemp => 90.0,
         Category::PackageCache => 85.0,
+        Category::ModelCache => 80.0,
         Category::Archive => 70.0,
         Category::Executable => 65.0,
         Category::Media => 55.0,
@@ -70,6 +71,9 @@ pub fn calculate_score(
         }
         Category::PackageCache => {
             "Package manager/application cache. Can be re-fetched if needed.".to_string()
+        }
+        Category::ModelCache => {
+            "AI / LLM model weights or runtime cache. Large space consumer.".to_string()
         }
         Category::Archive => {
             if age_score > 60.0 {

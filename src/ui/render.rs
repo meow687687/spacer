@@ -37,6 +37,22 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
     }
 }
 
+fn format_number_commas(n: usize) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+
+    for (i, &ch) in chars.iter().enumerate() {
+        result.push(ch);
+        let rem = len - 1 - i;
+        if rem > 0 && rem % 3 == 0 {
+            result.push(',');
+        }
+    }
+    result
+}
+
 fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     let scan_status_span = if app.is_scanning {
         Span::styled(
@@ -62,7 +78,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Sort: ", Style::default().fg(Color::DarkGray)),
             Span::styled(format!("[{}] ", app.sort_mode.short_label()), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
             Span::styled("│ Total: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ({} items) ", total_size_str, items_count), Style::default().fg(Color::LightCyan)),
+            Span::styled(format!("{} ({} items) ", total_size_str, format_number_commas(items_count)), Style::default().fg(Color::LightCyan)),
             Span::styled("│ Status: ", Style::default().fg(Color::DarkGray)),
             scan_status_span,
             if !app.filter_query.is_empty() {
@@ -123,6 +139,7 @@ fn render_explorer(frame: &mut Frame, app: &App, area: Rect) {
             // Category badge
             let badge_color = match item.category {
                 Category::DevArtifact => Color::Red,
+                Category::ModelCache => Color::LightMagenta,
                 Category::LogsAndTemp => Color::LightRed,
                 Category::PackageCache => Color::Magenta,
                 Category::Archive => Color::Yellow,
@@ -181,15 +198,15 @@ fn render_explorer(frame: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let widths = [
-        Constraint::Length(3),         // Stage check
+        Constraint::Length(4),         // Stage check
         Constraint::Min(16),           // Name
-        Constraint::Length(10),        // Category Tag
-        Constraint::Length(8),         // Bar
-        Constraint::Length(9),         // Size
-        Constraint::Length(4),         // Score
+        Constraint::Length(11),        // Category Tag
+        Constraint::Length(10),        // Graph Bar
+        Constraint::Length(10),        // Size
+        Constraint::Length(6),         // Waste Score
     ];
 
-    let title = format!(" Explorer ({} items) ", visible.len());
+    let title = format!(" Explorer ({} items) ", format_number_commas(visible.len()));
     let table = Table::new(rows, widths)
         .header(
             Row::new(vec![
@@ -235,7 +252,7 @@ fn render_inspector(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled("Type: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    if item.is_dir { format!("Directory ({} contents)", item.item_count) } else { "File".to_string() },
+                    if item.is_dir { format!("Directory ({} contents)", format_number_commas(item.item_count)) } else { "File".to_string() },
                     Style::default().fg(Color::LightCyan),
                 ),
             ]),
@@ -247,7 +264,7 @@ fn render_inspector(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled("Size: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(item.formatted_size(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::styled(format!(" ({} bytes)", item.size), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!(" ({} bytes)", format_number_commas(item.size as usize)), Style::default().fg(Color::DarkGray)),
             ]),
             Line::from(vec![
                 Span::styled("Last Modified: ", Style::default().fg(Color::DarkGray)),
@@ -357,7 +374,7 @@ fn render_inspector(frame: &mut Frame, app: &App, area: Rect) {
     let staged_lines = vec![
         Line::from(vec![
             Span::styled("Marked Items: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} item(s)", staged_count), Style::default().fg(staged_color).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{} item(s)", format_number_commas(staged_count)), Style::default().fg(staged_color).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
             Span::styled("Reclaimable Space: ", Style::default().fg(Color::DarkGray)),
@@ -462,7 +479,7 @@ fn render_delete_confirm_modal(frame: &mut Frame, app: &App, mode: DeleteMode) {
         ]),
         Line::from(vec![
             Span::styled("Total Items: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ", count), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{} ", format_number_commas(count)), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
             Span::styled("│ Space to Free: ", Style::default().fg(Color::DarkGray)),
             Span::styled(FileItem::format_size(bytes), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         ]),
@@ -486,7 +503,7 @@ fn render_delete_confirm_modal(frame: &mut Frame, app: &App, mode: DeleteMode) {
     let list_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(format!(" Items to Remove ({}) ", count));
+        .title(format!(" Items to Remove ({}) ", format_number_commas(count)));
 
     frame.render_widget(List::new(list_items).block(list_block), chunks[1]);
 
@@ -521,7 +538,7 @@ fn render_delete_result_modal(frame: &mut Frame, report: &crate::fs::deleter::De
     let mut lines = vec![
         Line::from(vec![
             Span::styled("Successfully Deleted: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} items", report.success_count), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{} items", format_number_commas(report.success_count)), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
             Span::styled("Space Reclaimed: ", Style::default().fg(Color::DarkGray)),
@@ -585,7 +602,8 @@ fn render_help_modal(frame: &mut Frame) {
         Line::from("  • Size (45%)        : Larger items get higher scores"),
         Line::from("  • Inactivity (30%)  : Files untouched for months/years score higher"),
         Line::from("  • Category (25%)    : High weight for build artifacts (target, node_modules),"),
-        Line::from("                        caches (.cache), logs/temp (*.log, *.tmp), archives (*.tar.gz)"),
+        Line::from("                        caches (.cache, .npm, .bun), AI models (ollama, .lmstudio),"),
+        Line::from("                        logs/temp (*.log, *.tmp), archives (*.tar.gz)"),
         Line::from(""),
         Line::from(Span::styled("Press <Esc> or <Enter> to close help", Style::default().fg(Color::DarkGray))),
     ];

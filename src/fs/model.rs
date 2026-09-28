@@ -5,6 +5,7 @@ use chrono::{DateTime, Local};
 pub enum Category {
     DevArtifact,
     PackageCache,
+    ModelCache,
     LogsAndTemp,
     Archive,
     Media,
@@ -18,6 +19,7 @@ impl Category {
         match self {
             Category::DevArtifact => "Dev Artifact",
             Category::PackageCache => "Package Cache",
+            Category::ModelCache => "AI / Model Cache",
             Category::LogsAndTemp => "Logs / Temp",
             Category::Archive => "Archive",
             Category::Media => "Media File",
@@ -31,6 +33,7 @@ impl Category {
         match self {
             Category::DevArtifact => "DEV-BUILD",
             Category::PackageCache => "PKG-CACHE",
+            Category::ModelCache => "AI-MODEL",
             Category::LogsAndTemp => "LOGS/TMP",
             Category::Archive => "ARCHIVE",
             Category::Media => "MEDIA",
@@ -127,6 +130,18 @@ pub fn detect_category(path: &Path, is_dir: bool) -> Category {
         .to_lowercase();
 
     if is_dir {
+        // AI / LLM Model caches
+        if name.contains("ollama")
+            || name == ".lmstudio"
+            || name == "lmstudio"
+            || name.contains("huggingface")
+            || name.contains("torch")
+            || name == ".llama"
+        {
+            return Category::ModelCache;
+        }
+
+        // Developer build artifacts
         match name.as_str() {
             "target" | "node_modules" | ".next" | "build" | "dist" | ".gradle" | "venv"
             | ".venv" | "__pycache__" | ".tox" | ".parcel-cache" | ".turbo" | ".pytest_cache"
@@ -134,7 +149,7 @@ pub fn detect_category(path: &Path, is_dir: bool) -> Category {
                 return Category::DevArtifact;
             }
             ".cache" | "cacheddata" | "crashpad" | "logs" | "npm-cache" | ".npm" | ".yarn"
-            | ".cargo-cache" | ".rustup" | "tmp" | "temp" => {
+            | ".cargo-cache" | ".cargo" | ".rustup" | ".bun" | "unityhub" | "tmp" | "temp" => {
                 return Category::PackageCache;
             }
             _ => {
@@ -149,6 +164,11 @@ pub fn detect_category(path: &Path, is_dir: bool) -> Category {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
+
+    // AI model weights
+    if ext == "gguf" || ext == "safetensors" || ext == "bin" && name.contains("model") || ext == "onnx" || ext == "pt" || ext == "pth" {
+        return Category::ModelCache;
+    }
 
     match ext.as_str() {
         "log" | "tmp" | "temp" | "dmp" | "bak" | "swp" | "old" | "cache" => Category::LogsAndTemp,
@@ -178,6 +198,10 @@ mod tests {
         assert_eq!(detect_category(Path::new("target"), true), Category::DevArtifact);
         assert_eq!(detect_category(Path::new("node_modules"), true), Category::DevArtifact);
         assert_eq!(detect_category(Path::new(".cache"), true), Category::PackageCache);
+        assert_eq!(detect_category(Path::new(".bun"), true), Category::PackageCache);
+        assert_eq!(detect_category(Path::new(".rustup"), true), Category::PackageCache);
+        assert_eq!(detect_category(Path::new(".lmstudio"), true), Category::ModelCache);
+        assert_eq!(detect_category(Path::new("model.gguf"), false), Category::ModelCache);
         assert_eq!(detect_category(Path::new("video.mp4"), false), Category::Media);
         assert_eq!(detect_category(Path::new("archive.tar.gz"), false), Category::Archive);
         assert_eq!(detect_category(Path::new("app.log"), false), Category::LogsAndTemp);
