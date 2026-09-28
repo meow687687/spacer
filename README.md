@@ -1,8 +1,14 @@
 # spacer
 
-A fast, interactive terminal disk space manager written in Rust.
+A lightning-fast, interactive terminal storage manager and deduplicator written in Rust.
 
-`spacer` scans your directories in real time, prioritizes what's actually safe to delete (caches, old build artifacts, dead logs), and lets you clean up gigabytes in seconds without accidentally nuking your important files.
+`spacer` scans your drives in real time, scores reclaimable waste (caches, build artifacts, stale logs, duplicate weights), and frees gigabytes in seconds without breaking your workflow.
+
+[![Demo Video](assets/demo.gif)](assets/demo.mp4)
+
+> 📹 **[Watch full high-res launch video (MP4)](assets/demo.mp4)**
+
+---
 
 ```
 ⚡ SPACER │ Path: /home/user │ 💾 /home (/dev/nvme0n1p2) 84% used (79.2 GB free) [████████░░]
@@ -16,13 +22,13 @@ Sort: [SIZE] View: [LIST] │ Total: 142.8 GB (315 items) │ Status: ✓ Ready
 │ [ ] 📁 .gradle      [DEV-BUILD] ░░░░  1.3 GB ││ • Size Impact:      100/100 [■■■■■■■■■■]  │
 │ [ ] 📁 .bun         [PKG-CACHE] ░░░░  1.2 GB ││ • Inactivity/Age:   85/100  [■■■■■■■■  ]  │
 │ [ ] 📁 .lmstudio    [AI-MODEL]  ░░░░  6.2 GB ││ • Category Heuristic:95/100 [■■■■■■■■■ ]  │
-└─────────────────────────────────────────────┘└───────────────────────────────────────────┘
+└─── Explorer ────────────────────────────────┘└─── Inspector ─────────────────────────────┘
  [Space] Stage  [d] Trash  [D] Permanent  [t] Treemap  [w] QuickWins  [F] Dupes  [s] Sort  [q] Quit
 ```
 
 ---
 
-## Quick Install
+## ⚡ Quick Install
 
 ### One-line installer (Linux & macOS)
 ```bash
@@ -40,6 +46,33 @@ git clone https://github.com/meow687687/spacer.git
 cd spacer
 ./install.sh
 ```
+
+---
+
+## 📸 Screenshots & Highlights
+
+<div align="center">
+
+### 1. Intelligent Waste Scoring & Drive Monitor
+<img src="assets/hero-preview.png" alt="Spacer Hero Screen" width="90%" />
+
+*Real-time streaming scanner with multi-factor waste scoring (Size + Age + Heuristics).*
+
+---
+
+### 2. Quick Wins Cleanup & Squarified Treemaps
+<img src="assets/quick-wins-treemap.png" alt="Quick Wins & Treemap" width="90%" />
+
+*1-Click discovery of disposable caches and interactive zoomable treemaps (`<t>`).*
+
+---
+
+### 3. Atomic Hardlink Deduplication (`ln -f`)
+<img src="assets/hardlink-dedup.png" alt="Hardlink Deduplication" width="90%" />
+
+*Find duplicate multi-gigabyte files and collapse them into single inodes with zero broken paths.*
+
+</div>
 
 ---
 
