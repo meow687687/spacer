@@ -1188,6 +1188,7 @@ dependencies = [
  "crossbeam-channel",
  "crossterm",
  "flate2",
+ "libc",
  "ratatui",
  "rayon",
  "self-replace",
@@ -1201,6 +1202,7 @@ dependencies = [
  "trash",
  "unicode-width 0.2.0",
  "ureq",
+ "urlencoding",
  "walkdir",
 ]
 
