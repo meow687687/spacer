@@ -15,21 +15,37 @@ pub fn handle_events(app: &mut App) -> std::io::Result<()> {
 fn handle_key_event(app: &mut App, key: KeyEvent) {
     // 1. If a modal is open, modal handles inputs
     match &mut app.active_modal {
-        ModalState::ConfirmDelete { mode } => {
+        ModalState::ConfirmDelete {
+            mode,
+            typed_confirmation,
+            warn_running_processes: _,
+        } => {
             let current_mode = *mode;
+
             match key.code {
+                KeyCode::Char(c) if current_mode == DeleteMode::Permanent => {
+                    typed_confirmation.push(c);
+                }
+                KeyCode::Backspace if current_mode == DeleteMode::Permanent => {
+                    typed_confirmation.pop();
+                }
                 KeyCode::Enter => {
+                    // Requirement 2: Permanent delete requires typing "DELETE"
+                    if current_mode == DeleteMode::Permanent && typed_confirmation.trim() != "DELETE" {
+                        return;
+                    }
                     app.execute_deletion(current_mode);
                 }
-                KeyCode::Esc | KeyCode::Char('q') => {
+                KeyCode::Esc => {
                     app.active_modal = ModalState::None;
                 }
-                KeyCode::Tab | KeyCode::Char('t') => {
+                KeyCode::Tab => {
                     let new_mode = match current_mode {
                         DeleteMode::Trash => DeleteMode::Permanent,
                         DeleteMode::Permanent => DeleteMode::Trash,
                     };
-                    app.active_modal = ModalState::ConfirmDelete { mode: new_mode };
+                    *mode = new_mode;
+                    typed_confirmation.clear();
                 }
                 _ => {}
             }
@@ -90,7 +106,7 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                         }
                     }
                     if !targets.is_empty() {
-                        let report = execute_batch_delete(&targets, DeleteMode::Trash);
+                        let report = execute_batch_delete(&targets, DeleteMode::Trash, None);
                         app.active_modal = ModalState::DeletionResult(report);
                         app.start_scan(app.current_dir.clone());
                     } else {

@@ -39,7 +39,11 @@ pub enum ViewMode {
 #[derive(Debug, Clone)]
 pub enum ModalState {
     None,
-    ConfirmDelete { mode: DeleteMode },
+    ConfirmDelete {
+        mode: DeleteMode,
+        typed_confirmation: String,
+        warn_running_processes: Vec<crate::fs::processes::ProcessLockInfo>,
+    },
     Help,
     DeletionResult(DeletionReport),
     UpdateModal {
@@ -354,20 +358,25 @@ impl App {
     }
 
     pub fn trigger_delete(&mut self, mode: DeleteMode) {
-        let (count, _, _) = self.staged_items_info();
+        let (count, _, items) = self.staged_items_info();
         if count == 0 {
-            if let Some(item) = self.selected_item() {
-                self.staged_set.insert(item.path.clone());
-            } else {
-                return;
-            }
+            // Requirement 3: Nothing may be auto-staged for deletion.
+            return;
         }
-        self.active_modal = ModalState::ConfirmDelete { mode };
+
+        // Requirement 4: Check running processes locking staged items
+        let process_locks = crate::fs::deleter::find_processes_locking_items(&items);
+
+        self.active_modal = ModalState::ConfirmDelete {
+            mode,
+            typed_confirmation: String::new(),
+            warn_running_processes: process_locks,
+        };
     }
 
     pub fn execute_deletion(&mut self, mode: DeleteMode) {
         let (_, _, items_to_delete) = self.staged_items_info();
-        let report = execute_batch_delete(&items_to_delete, mode);
+        let report = execute_batch_delete(&items_to_delete, mode, None);
 
         self.staged_set.clear();
         self.active_modal = ModalState::DeletionResult(report);

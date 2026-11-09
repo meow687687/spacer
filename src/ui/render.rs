@@ -34,7 +34,9 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
 
     // Modals
     match &app.active_modal {
-        ModalState::ConfirmDelete { mode } => render_delete_confirm_modal(frame, app, *mode),
+        ModalState::ConfirmDelete { mode, typed_confirmation, warn_running_processes } => {
+            render_delete_confirm_modal(frame, app, *mode, typed_confirmation, warn_running_processes);
+        }
         ModalState::DeletionResult(report) => render_delete_result_modal(frame, report),
         ModalState::Help => render_help_modal(frame),
         ModalState::UpdateModal { info, is_updating, error, success } => {
@@ -494,8 +496,14 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(p, area);
 }
 
-fn render_delete_confirm_modal(frame: &mut Frame, app: &App, mode: DeleteMode) {
-    let area = centered_rect(65, 55, frame.area());
+fn render_delete_confirm_modal(
+    frame: &mut Frame,
+    app: &App,
+    mode: DeleteMode,
+    typed_confirmation: &str,
+    warn_running_processes: &[crate::fs::processes::ProcessLockInfo],
+) {
+    let area = centered_rect(70, 65, frame.area());
     frame.render_widget(Clear, area);
 
     let (count, bytes, items) = app.staged_items_info();
@@ -514,27 +522,44 @@ fn render_delete_confirm_modal(frame: &mut Frame, app: &App, mode: DeleteMode) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let has_locks = !warn_running_processes.is_empty();
+    let is_permanent = mode == DeleteMode::Permanent;
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Min(5),
-            Constraint::Length(3),
+            Constraint::Length(if has_locks { 5 } else { 3 }), // Summary + process warning
+            Constraint::Min(4),                                // Item list
+            Constraint::Length(if is_permanent { 4 } else { 2 }), // Confirmation / action prompt
         ])
         .split(inner);
 
-    let summary = vec![
+    let mut summary = vec![
         Line::from(vec![
             Span::styled("Target Mode: ", Style::default().fg(Color::DarkGray)),
             Span::styled(mode.title(), Style::default().fg(mode_color).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
             Span::styled("Total Items: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ", format_number_commas(count)), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled("│ Space to Free: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{} items ", format_number_commas(count)), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("│ Total Size: ", Style::default().fg(Color::DarkGray)),
             Span::styled(FileItem::format_size(bytes), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         ]),
     ];
+
+    if has_locks {
+        summary.push(Line::from(vec![
+            Span::styled("⚠️ WARNING: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{} active process(es) have open files in target path (e.g. {}).",
+                    warn_running_processes.len(),
+                    warn_running_processes.first().map(|p| format!("{} [PID {}]", p.process_name, p.pid)).unwrap_or_default()
+                ),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]));
+    }
+
     frame.render_widget(Paragraph::new(summary), chunks[0]);
 
     // Item preview list
@@ -554,19 +579,48 @@ fn render_delete_confirm_modal(frame: &mut Frame, app: &App, mode: DeleteMode) {
     let list_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(format!(" Items to Remove ({}) ", format_number_commas(count)));
+        .title(format!(" Staged Items ({}) - Total: {} ", format_number_commas(count), FileItem::format_size(bytes)));
 
     frame.render_widget(List::new(list_items).block(list_block), chunks[1]);
 
-    let action_prompt = vec![
-        Line::from(vec![
+    let mut action_prompt = Vec::new();
+    if is_permanent {
+        let is_ready = typed_confirmation.trim() == "DELETE";
+        let status_color = if is_ready { Color::LightGreen } else { Color::Red };
+
+        action_prompt.push(Line::from(vec![
+            Span::styled("Type ", Style::default().fg(Color::White)),
+            Span::styled("DELETE", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(" to confirm permanent deletion: [", Style::default().fg(Color::White)),
+            Span::styled(typed_confirmation, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+            Span::styled("] ", Style::default().fg(Color::White)),
+            if is_ready {
+                Span::styled("✓ READY", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD))
+            } else {
+                Span::styled("(Required)", Style::default().fg(Color::DarkGray))
+            },
+        ]));
+        action_prompt.push(Line::from(vec![
+            Span::styled("Press ", Style::default().fg(Color::DarkGray)),
+            Span::styled("<Enter>", Style::default().fg(if is_ready { Color::Green } else { Color::DarkGray }).add_modifier(Modifier::BOLD)),
+            Span::styled(" to Execute │ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("<Tab>", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(" Switch to Trash │ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("<Esc>", Style::default().fg(Color::White)),
+            Span::styled(" Cancel", Style::default().fg(Color::DarkGray)),
+        ]));
+    } else {
+        action_prompt.push(Line::from(vec![
             Span::styled("Press ", Style::default().fg(Color::DarkGray)),
             Span::styled("<Enter>", Style::default().fg(mode_color).add_modifier(Modifier::BOLD)),
-            Span::styled(" to EXECUTE DELETION, or ", Style::default().fg(Color::DarkGray)),
-            Span::styled("<Esc>", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(" to CANCEL", Style::default().fg(Color::DarkGray)),
-        ]),
-    ];
+            Span::styled(" to Move to Trash │ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("<Tab>", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(" Switch to Permanent │ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("<Esc>", Style::default().fg(Color::White)),
+            Span::styled(" Cancel", Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
     frame.render_widget(Paragraph::new(action_prompt).alignment(Alignment::Center), chunks[2]);
 }
 

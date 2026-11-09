@@ -39,6 +39,27 @@ pub fn run_clean_command(root: &Path, dry_run: bool, force: bool) -> Result<()> 
         return Ok(());
     }
 
+    // Check for open processes before deleting
+    let locks = crate::fs::deleter::find_processes_locking_items(&all_targets);
+    if !locks.is_empty() {
+        println!("\n⚠️  WARNING: Running processes have open files in targets to clean:");
+        for lock in locks.iter().take(5) {
+            println!("  • Process '{}' (PID {}) accessing {}", lock.process_name, lock.pid, lock.locked_path);
+        }
+        if !force {
+            print!("Files are currently in use by active processes. Proceed anyway? [y/N]: ");
+            use std::io::{self, Write};
+            io::stdout().flush()?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+
+            if !input.trim().eq_ignore_ascii_case("y") {
+                println!("Operation cancelled due to running process locks.");
+                return Ok(());
+            }
+        }
+    }
+
     if !force {
         print!("\nMove these items to System Trash? [y/N]: ");
         use std::io::{self, Write};
@@ -53,7 +74,7 @@ pub fn run_clean_command(root: &Path, dry_run: bool, force: bool) -> Result<()> 
     }
 
     println!("🗑️  Moving items to system trash...");
-    let report = execute_batch_delete(&all_targets, DeleteMode::Trash);
+    let report = execute_batch_delete(&all_targets, DeleteMode::Trash, None);
 
     println!(
         "✓ Successfully trashed {} items! Reclaimed {}.",

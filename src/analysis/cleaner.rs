@@ -59,13 +59,15 @@ pub fn scan_quick_wins(root: &Path) -> Vec<WasteCategory> {
                     let sz = dir_size(&path);
                     if sz > 1_000_000 {
                         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                        // Only regenerable package caches are safe to preselect (e.g. npm, yarn, pip, thumbnails)
+                        let is_safe = name == ".npm" || name == "yarn" || name == "pip" || name == "thumbnails" || name == "Cache";
                         pkg_items.push(WasteItem {
                             path,
                             name,
                             size: sz,
                             category_name: cat,
                             description: desc.to_string(),
-                            selected: true,
+                            selected: is_safe,
                         });
                     }
                 }
@@ -89,7 +91,7 @@ pub fn scan_quick_wins(root: &Path) -> Vec<WasteCategory> {
                             size: sz,
                             category_name: cat,
                             description: desc.to_string(),
-                            selected: true,
+                            selected: false,
                         });
                     }
                 }

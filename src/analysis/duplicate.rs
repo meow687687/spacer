@@ -139,6 +139,9 @@ pub fn replace_with_hardlinks(group: &DuplicateGroup) -> Result<usize> {
 
     for secondary in &group.paths[1..] {
         if secondary.exists() && primary.exists() && secondary != primary {
+            // Check protected paths before modifying/replacing secondary
+            crate::fs::protected::check_protected_path(secondary, None)?;
+
             // Remove secondary file and hardlink to primary
             let temp_backup = secondary.with_extension("spacer_hardlink_tmp");
             fs::rename(secondary, &temp_backup).context("Failed to stage file for hardlinking")?;
@@ -147,6 +150,13 @@ pub fn replace_with_hardlinks(group: &DuplicateGroup) -> Result<usize> {
                 Ok(_) => {
                     let _ = fs::remove_file(&temp_backup);
                     replaced_count += 1;
+                    // Log cleanup action
+                    crate::fs::logger::log_cleanup_action(
+                        "HARDLINK_DEDUP",
+                        secondary,
+                        group.file_size,
+                        "hardlink_ln_f",
+                    );
                 }
                 Err(e) => {
                     // Restore original file if cross-device or error
