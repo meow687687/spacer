@@ -77,10 +77,24 @@ pub fn run_clean_command(root: &Path, dry_run: bool, force: bool) -> Result<()> 
     let report = execute_batch_delete(&all_targets, DeleteMode::Trash, None);
 
     println!(
-        "✓ Successfully trashed {} items! Reclaimed {}.",
+        "✓ Successfully processed {} items!\n  • Freed now: {}\n  • Moved to Trash (not yet freed): {}",
         report.success_count,
-        FileItem::format_size(report.bytes_freed)
+        FileItem::format_size(report.bytes_freed_now),
+        FileItem::format_size(report.bytes_trashed),
     );
+
+    if let Some(delta) = report.statvfs_delta {
+        let delta_str = if delta >= 0 {
+            format!("+{}", FileItem::format_size(delta as u64))
+        } else {
+            format!("-{}", FileItem::format_size((-delta) as u64))
+        };
+        println!("  • Real volume free space delta: {}", delta_str);
+    }
+
+    if let Some(hint) = report.snapshot_hint {
+        println!("\n💡 Snapshot Hint: {}", hint);
+    }
 
     if !report.errors.is_empty() {
         println!("\n⚠️ Errors encountered:");
