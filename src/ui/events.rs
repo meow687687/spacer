@@ -51,6 +51,26 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
             }
             return;
         }
+        ModalState::ConfirmEmptyTrash { typed_confirmation } => {
+            match key.code {
+                KeyCode::Esc => {
+                    app.active_modal = ModalState::None;
+                }
+                KeyCode::Enter => {
+                    if typed_confirmation.trim().eq_ignore_ascii_case("EMPTY") {
+                        app.execute_empty_trash();
+                    }
+                }
+                KeyCode::Backspace => {
+                    typed_confirmation.pop();
+                }
+                KeyCode::Char(c) => {
+                    typed_confirmation.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
         ModalState::QuickWins { categories, selected_cat_idx, selected_item_idx, in_items_pane } => {
             match key.code {
                 KeyCode::Tab | KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
@@ -265,6 +285,9 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('D') => {
             app.trigger_delete(DeleteMode::Permanent);
+        }
+        KeyCode::Char('E') => {
+            app.trigger_empty_trash();
         }
         KeyCode::Char('s') => {
             app.cycle_sort();

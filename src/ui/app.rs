@@ -45,6 +45,9 @@ pub enum ModalState {
         warn_running_processes: Vec<crate::fs::processes::ProcessLockInfo>,
     },
     Help,
+    ConfirmEmptyTrash {
+        typed_confirmation: String,
+    },
     DeletionResult(DeletionReport),
     UpdateModal {
         info: UpdateInfo,
@@ -84,6 +87,7 @@ pub struct App {
     pub active_modal: ModalState,
     pub should_quit: bool,
     pub available_update: Option<UpdateInfo>,
+    pub snapshot_warning: Option<String>,
     
     // Channels
     pub scan_tx: Sender<ScanMsg>,
@@ -121,6 +125,7 @@ impl App {
             active_modal: ModalState::None,
             should_quit: false,
             available_update: None,
+            snapshot_warning: crate::fs::statvfs::detect_btrfs_and_snapshots(&canonical_path),
             scan_tx: tx.clone(),
             scan_rx: rx,
             update_rx,
@@ -138,6 +143,7 @@ impl App {
         self.total_scanned_bytes = 0;
         self.total_scanned_items = 0;
         self.partition_info = get_partition_for_path(&path);
+        self.snapshot_warning = crate::fs::statvfs::detect_btrfs_and_snapshots(&path);
 
         spawn_scanner(path, self.scan_tx.clone());
     }
@@ -427,6 +433,48 @@ impl App {
                     *is_updating = false;
                     *error = Some(e.to_string());
                 }
+            }
+        }
+    }
+
+    pub fn trigger_empty_trash(&mut self) {
+        self.active_modal = ModalState::ConfirmEmptyTrash {
+            typed_confirmation: String::new(),
+        };
+    }
+
+    pub fn execute_empty_trash(&mut self) {
+        let home_dir = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/"));
+        #[cfg(unix)]
+        let uid = unsafe { libc::getuid() };
+        #[cfg(not(unix))]
+        let uid = 1000;
+
+        let real_fs = crate::fs::trash::RealTrashFs;
+        match crate::fs::trash::empty_trash_all(&real_fs, &home_dir, uid) {
+            Ok((count, bytes)) => {
+                crate::fs::logger::log_cleanup_action("EMPTY_TRASH", &home_dir.join(".local/share/Trash"), bytes, "empty_trash");
+                let report = DeletionReport {
+                    success_count: count,
+                    bytes_freed_now: bytes,
+                    bytes_trashed: 0,
+                    statvfs_delta: None,
+                    snapshot_hint: None,
+                    errors: Vec::new(),
+                };
+                self.active_modal = ModalState::DeletionResult(report);
+                self.start_scan(self.current_dir.clone());
+            }
+            Err(e) => {
+                let report = DeletionReport {
+                    success_count: 0,
+                    bytes_freed_now: 0,
+                    bytes_trashed: 0,
+                    statvfs_delta: None,
+                    snapshot_hint: None,
+                    errors: vec![(home_dir, e.to_string())],
+                };
+                self.active_modal = ModalState::DeletionResult(report);
             }
         }
     }

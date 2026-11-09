@@ -37,6 +37,9 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
         ModalState::ConfirmDelete { mode, typed_confirmation, warn_running_processes } => {
             render_delete_confirm_modal(frame, app, *mode, typed_confirmation, warn_running_processes);
         }
+        ModalState::ConfirmEmptyTrash { typed_confirmation } => {
+            render_empty_trash_confirm_modal(frame, typed_confirmation);
+        }
         ModalState::DeletionResult(report) => render_delete_result_modal(frame, report),
         ModalState::Help => render_help_modal(frame),
         ModalState::UpdateModal { info, is_updating, error, success } => {
@@ -465,6 +468,8 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Trash ", Style::default().fg(Color::White)),
             Span::styled(" [D] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
             Span::styled("Permanent ", Style::default().fg(Color::White)),
+            Span::styled(" [E] ", Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD)),
+            Span::styled("EmptyTrash ", Style::default().fg(Color::White)),
             Span::styled(" [t] ", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)),
             Span::styled("Treemap ", Style::default().fg(Color::White)),
             Span::styled(" [w] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
@@ -478,6 +483,11 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(" [r] ", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)),
             Span::styled("Rescan ", Style::default().fg(Color::White)),
         ];
+
+        if let Some(ref warning) = app.snapshot_warning {
+            spans.push(Span::styled(" │ ⚠️ ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+            spans.push(Span::styled(warning.clone(), Style::default().fg(Color::Yellow)));
+        }
 
         if app.available_update.is_some() {
             spans.push(Span::styled(" [u] ", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)));
@@ -642,15 +652,37 @@ fn render_delete_result_modal(frame: &mut Frame, report: &crate::fs::deleter::De
 
     let mut lines = vec![
         Line::from(vec![
-            Span::styled("Successfully Deleted: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Items Processed: ", Style::default().fg(Color::DarkGray)),
             Span::styled(format!("{} items", format_number_commas(report.success_count)), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
-            Span::styled("Space Reclaimed: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(FileItem::format_size(report.bytes_freed), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("• Freed now: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(FileItem::format_size(report.bytes_freed_now), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         ]),
-        Line::from(""),
+        Line::from(vec![
+            Span::styled("• Moved to Trash (not yet freed): ", Style::default().fg(Color::DarkGray)),
+            Span::styled(FileItem::format_size(report.bytes_trashed), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
     ];
+
+    if let Some(delta) = report.statvfs_delta {
+        let delta_str = if delta >= 0 {
+            format!("+{}", FileItem::format_size(delta as u64))
+        } else {
+            format!("-{}", FileItem::format_size((-delta) as u64))
+        };
+        lines.push(Line::from(vec![
+            Span::styled("• Real disk delta (statvfs): ", Style::default().fg(Color::DarkGray)),
+            Span::styled(delta_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]));
+    }
+
+    if let Some(ref hint) = report.snapshot_hint {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(format!("💡 Hint: {}", hint), Style::default().fg(Color::LightYellow))));
+    }
+
+    lines.push(Line::from(""));
 
     if is_err {
         lines.push(Line::from(Span::styled("Errors Encountered:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))));
@@ -804,6 +836,7 @@ fn render_help_modal(frame: &mut Frame) {
         Line::from("  c               : Clear all staged items"),
         Line::from("  d               : Open deletion confirmation (Move to System Trash)"),
         Line::from("  D (Shift+d)     : Open permanent deletion confirmation (Unrecoverable rm)"),
+        Line::from("  E (Shift+e)     : Empty system and per-volume Trash (requires confirmation)"),
         Line::from(""),
         Line::from(Span::styled("SORTING, FILTERING & UPDATES", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
         Line::from("  s               : Cycle sort order (Size ↓, Priority Score ↓, Age ↓, Name A-Z)"),
@@ -823,6 +856,65 @@ fn render_help_modal(frame: &mut Frame) {
     ];
 
     frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }), inner);
+}
+
+fn render_empty_trash_confirm_modal(frame: &mut Frame, typed_confirmation: &str) {
+    let area = centered_rect(65, 45, frame.area());
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .title(" 🗑️ Empty System Trash ")
+        .border_style(Style::default().fg(Color::Red));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Min(4),
+            Constraint::Length(3),
+        ])
+        .split(inner);
+
+    let summary = vec![
+        Line::from(Span::styled("Permanently purge all files in System & Volume Trash?", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("This will reclaim storage permanently and cannot be undone.", Style::default().fg(Color::White))),
+    ];
+    frame.render_widget(Paragraph::new(summary), chunks[0]);
+
+    let is_ready = typed_confirmation.trim().eq_ignore_ascii_case("EMPTY");
+    let status_color = if is_ready { Color::LightGreen } else { Color::Red };
+
+    let prompt = vec![
+        Line::from(vec![
+            Span::styled("Type ", Style::default().fg(Color::White)),
+            Span::styled("EMPTY", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(" to confirm: [", Style::default().fg(Color::White)),
+            Span::styled(typed_confirmation, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+            Span::styled("] ", Style::default().fg(Color::White)),
+            if is_ready {
+                Span::styled("✓ READY", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD))
+            } else {
+                Span::styled("(Required)", Style::default().fg(Color::DarkGray))
+            },
+        ]),
+    ];
+    frame.render_widget(Paragraph::new(prompt).alignment(Alignment::Center), chunks[1]);
+
+    let footer = vec![
+        Line::from(vec![
+            Span::styled("Press ", Style::default().fg(Color::DarkGray)),
+            Span::styled("<Enter>", Style::default().fg(if is_ready { Color::Green } else { Color::DarkGray }).add_modifier(Modifier::BOLD)),
+            Span::styled(" to Empty Trash │ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("<Esc>", Style::default().fg(Color::White)),
+            Span::styled(" Cancel", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+    frame.render_widget(Paragraph::new(footer).alignment(Alignment::Center), chunks[2]);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

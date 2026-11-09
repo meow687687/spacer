@@ -112,6 +112,7 @@ Most disk usage tools (`ncdu`, `dua`, `dust`) show you raw sizes, but leave you 
 | `c` | Clear staged selection |
 | `d` | Open deletion confirmation (**Move to Trash**) |
 | `D` (`Shift+D`) | Open permanent deletion confirmation (`rm -rf`) |
+| `E` (`Shift+E`) | Empty system and per-volume Trash (requires typing `EMPTY`) |
 | `w` | Open **Quick Wins** cleanup wizard |
 | `F` (`Shift+F`) | Open **Duplicate File Finder** & hardlink deduplicator |
 
