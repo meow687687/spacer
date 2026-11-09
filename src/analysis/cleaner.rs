@@ -132,8 +132,8 @@ pub fn scan_quick_wins(root: &Path) -> Vec<WasteCategory> {
             }
         } else {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-            if ext == "log" || ext == "dmp" || ext == "tmp" || name.starts_with("core.") {
-                if let Ok(meta) = fs::metadata(path) {
+            if (ext == "log" || ext == "dmp" || ext == "tmp" || name.starts_with("core."))
+                && let Ok(meta) = fs::metadata(path) {
                     let len = meta.len();
                     if len > 500_000 {
                         log_items.push(WasteItem {
@@ -146,14 +146,13 @@ pub fn scan_quick_wins(root: &Path) -> Vec<WasteCategory> {
                         });
                     }
                 }
-            }
         }
     }
 
-    dev_items.sort_by(|a, b| b.size.cmp(&a.size));
-    pkg_items.sort_by(|a, b| b.size.cmp(&a.size));
-    ai_items.sort_by(|a, b| b.size.cmp(&a.size));
-    log_items.sort_by(|a, b| b.size.cmp(&a.size));
+    dev_items.sort_by_key(|a| std::cmp::Reverse(a.size));
+    pkg_items.sort_by_key(|a| std::cmp::Reverse(a.size));
+    ai_items.sort_by_key(|a| std::cmp::Reverse(a.size));
+    log_items.sort_by_key(|a| std::cmp::Reverse(a.size));
 
     let mut categories = Vec::new();
 

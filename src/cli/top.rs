@@ -35,7 +35,7 @@ pub fn run_top_command(root: &Path, count: usize) -> Result<()> {
                 meta.len()
             };
 
-            let modified = meta.modified().ok().map(|t| chrono::DateTime::from(t));
+            let modified = meta.modified().ok().map(chrono::DateTime::from);
             let category = detect_category(path, is_dir);
             let score = calculate_score(path, is_dir, size, modified, None, category);
 
@@ -53,9 +53,9 @@ pub fn run_top_command(root: &Path, count: usize) -> Result<()> {
         }
     }
 
-    items.sort_by(|a, b| b.size.cmp(&a.size));
+    items.sort_by_key(|a| std::cmp::Reverse(a.size));
 
-    println!("\n{:<6} {:<12} {:<12} {:<6} {}", "RANK", "SIZE", "TAG", "WASTE", "PATH");
+    println!("\n{:<6} {:<12} {:<12} {:<6} PATH", "RANK", "SIZE", "TAG", "WASTE");
     println!("{}", "─".repeat(70));
 
     for (idx, item) in items.iter().take(count).enumerate() {
@@ -71,6 +71,6 @@ pub fn run_top_command(root: &Path, count: usize) -> Result<()> {
         );
     }
 
-    println!("");
+    println!();
     Ok(())
 }

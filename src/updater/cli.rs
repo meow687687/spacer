@@ -39,12 +39,11 @@ pub fn run_cli_update() -> Result<()> {
                         .arg("-c")
                         .arg("curl -fsSL https://raw.githubusercontent.com/meow687687/spacer/main/install.sh | bash")
                         .status();
-                    if let Ok(s) = status {
-                        if s.success() {
+                    if let Ok(s) = status
+                        && s.success() {
                             println!("  \x1b[92m✓\x1b[0m Spacer updated successfully via installer script!");
                             return Ok(());
                         }
-                    }
                 }
             }
         }

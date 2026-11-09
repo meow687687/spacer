@@ -174,11 +174,10 @@ impl App {
         }
 
         // Poll update check result
-        if let Ok(update_res) = self.update_rx.try_recv() {
-            if let Some(info) = update_res {
+        if let Ok(update_res) = self.update_rx.try_recv()
+            && let Some(info) = update_res {
                 self.available_update = Some(info);
             }
-        }
     }
 
     pub fn visible_items(&self) -> Vec<&FileItem> {
@@ -236,13 +235,12 @@ impl App {
     }
 
     pub fn enter_selected(&mut self) {
-        if let Some(item) = self.selected_item() {
-            if item.is_dir {
+        if let Some(item) = self.selected_item()
+            && item.is_dir {
                 let target = item.path.clone();
                 self.current_dir = target.clone();
                 self.start_scan(target);
             }
-        }
     }
 
     pub fn navigate_parent(&mut self) {
@@ -350,7 +348,7 @@ impl App {
                 });
             }
             SortMode::NameAsc => {
-                self.items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                self.items.sort_by_key(|a| a.name.to_lowercase());
             }
         }
     }

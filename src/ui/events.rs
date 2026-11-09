@@ -5,11 +5,10 @@ use crate::fs::deleter::{execute_batch_delete, DeleteMode};
 use crate::ui::app::{App, ModalState};
 
 pub fn handle_events(app: &mut App) -> std::io::Result<()> {
-    if event::poll(Duration::from_millis(50))? {
-        if let Event::Key(key) = event::read()? {
+    if event::poll(Duration::from_millis(50))?
+        && let Event::Key(key) = event::read()? {
             handle_key_event(app, key);
         }
-    }
     Ok(())
 }
 
@@ -55,11 +54,10 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     if *in_items_pane {
-                        if let Some(cat) = categories.get(*selected_cat_idx) {
-                            if *selected_item_idx + 1 < cat.items.len() {
+                        if let Some(cat) = categories.get(*selected_cat_idx)
+                            && *selected_item_idx + 1 < cat.items.len() {
                                 *selected_item_idx += 1;
                             }
-                        }
                     } else {
                         if *selected_cat_idx + 1 < categories.len() {
                             *selected_cat_idx += 1;
@@ -69,11 +67,10 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char(' ') => {
                     if *in_items_pane {
-                        if let Some(cat) = categories.get_mut(*selected_cat_idx) {
-                            if let Some(item) = cat.items.get_mut(*selected_item_idx) {
+                        if let Some(cat) = categories.get_mut(*selected_cat_idx)
+                            && let Some(item) = cat.items.get_mut(*selected_item_idx) {
                                 item.selected = !item.selected;
                             }
-                        }
                     } else {
                         if let Some(cat) = categories.get_mut(*selected_cat_idx) {
                             let all_sel = cat.items.iter().all(|i| i.selected);

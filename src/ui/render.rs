@@ -59,7 +59,7 @@ fn format_number_commas(n: usize) -> String {
     for (i, &ch) in chars.iter().enumerate() {
         result.push(ch);
         let rem = len - 1 - i;
-        if rem > 0 && rem % 3 == 0 {
+        if rem > 0 && rem.is_multiple_of(3) {
             result.push(',');
         }
     }

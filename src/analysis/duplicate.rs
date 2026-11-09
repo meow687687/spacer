@@ -65,15 +65,14 @@ pub fn scan_duplicates(root: &Path) -> DuplicateReport {
         .into_iter()
         .filter_map(|e| e.ok())
     {
-        if entry.file_type().is_file() {
-            if let Ok(meta) = entry.metadata() {
+        if entry.file_type().is_file()
+            && let Ok(meta) = entry.metadata() {
                 let len = meta.len();
                 // Ignore zero-byte files or tiny files under 512 bytes
                 if len >= 512 {
                     size_map.entry(len).or_default().push(entry.path().to_path_buf());
                 }
             }
-        }
     }
 
     // Phase 2: Prefix 4KB hash for size collisions
@@ -121,7 +120,7 @@ pub fn scan_duplicates(root: &Path) -> DuplicateReport {
     }
 
     // Sort groups by wasted bytes descending
-    groups.sort_by(|a, b| b.wasted_bytes().cmp(&a.wasted_bytes()));
+    groups.sort_by_key(|a| std::cmp::Reverse(a.wasted_bytes()));
 
     DuplicateReport {
         total_duplicate_files: total_dupe_files,

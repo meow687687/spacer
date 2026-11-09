@@ -74,11 +74,11 @@ pub fn check_for_updates(force: bool) -> Result<Option<UpdateInfo>> {
     let current_ver = Version::parse(current_ver_str).unwrap_or(Version::new(0, 1, 0));
 
     // 1. Check local cache if not forced
-    if !force {
-        if let Some(ref path) = cache_path {
-            if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(cache) = serde_json::from_str::<CacheData>(&content) {
-                    if now.saturating_sub(cache.last_check_timestamp) < CACHE_TTL_SECONDS {
+    if !force
+        && let Some(ref path) = cache_path
+            && let Ok(content) = fs::read_to_string(path)
+                && let Ok(cache) = serde_json::from_str::<CacheData>(&content)
+                    && now.saturating_sub(cache.last_check_timestamp) < CACHE_TTL_SECONDS {
                         let clean_ver = cache.latest_version.trim_start_matches('v');
                         if let Ok(remote_ver) = Version::parse(clean_ver) {
                             if remote_ver > current_ver {
@@ -94,10 +94,6 @@ pub fn check_for_updates(force: bool) -> Result<Option<UpdateInfo>> {
                             }
                         }
                     }
-                }
-            }
-        }
-    }
 
     // 2. Fetch from GitHub API
     let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
@@ -127,14 +123,12 @@ pub fn check_for_updates(force: bool) -> Result<Option<UpdateInfo>> {
 
     if let Some(assets) = resp["assets"].as_array() {
         for asset in assets {
-            if let Some(name) = asset["name"].as_str() {
-                if name == expected_asset_name || name == format!("spacer-{}", target) {
-                    if let Some(browser_download_url) = asset["browser_download_url"].as_str() {
+            if let Some(name) = asset["name"].as_str()
+                && (name == expected_asset_name || name == format!("spacer-{}", target))
+                    && let Some(browser_download_url) = asset["browser_download_url"].as_str() {
                         download_url = Some(browser_download_url.to_string());
                         break;
                     }
-                }
-            }
         }
     }
 

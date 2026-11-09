@@ -52,7 +52,7 @@ pub fn run_export_command(
                 meta.len()
             };
 
-            let modified = meta.modified().ok().map(|t| chrono::DateTime::from(t));
+            let modified = meta.modified().ok().map(chrono::DateTime::from);
             let category = detect_category(entry.path(), is_dir);
             let score = calculate_score(entry.path(), is_dir, size, modified, None, category);
 
