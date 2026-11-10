@@ -85,7 +85,7 @@ Most disk usage tools (`ncdu`, `dua`, `dust`) show you raw sizes, but leave you 
 * **Instant UI feedback**: Starts streaming top-level folder sizes immediately while indexing deep subtrees asynchronously in the background.
 * **Waste Prioritization (0–100 Score)**: Combines size footprint (45%), inactivity/age (30%), and category rules (25%) so rebuildable dev junk floats straight to the top.
 * **Smart "Quick Wins" Wizard (`w` / `spacer clean`)**: One-key discovery of safe targets (`target/`, `.npm`, `~/.cache`, huggingface model blobs, core dumps).
-* **Duplicate Detection + Hardlinks (`F` / `spacer dupes`)**: Finds byte-identical files using a 3-stage hashing pipeline (Size $\rightarrow$ 4KB prefix $\rightarrow$ SHA-256) and can replace duplicates with hardlinks (`ln -f`) to reclaim 100% of the duplicate space without breaking file paths.
+* **Duplicate Detection + Safe Deduplication (`F` / `spacer dupes`)**: Finds byte-identical files using a 3-stage hashing pipeline (Size $\rightarrow$ 4KB prefix $\rightarrow$ SHA-256) with final byte-by-byte verification. Safely deduplicates using Copy-on-Write reflinks (Linux FICLONE ioctl on Btrfs/XFS, `clonefile` on macOS APFS) or atomic hardlinks (`--hardlink`) with dry-run default, process lock protection, and atomic rollbacks.
 * **Dual views**: Switch instantly between the classic table explorer and an interactive squarified treemap (`t`) with zoom in (`Enter`) and zoom out (`Backspace`).
 * **Safe by default**: Deletions default to System Trash (`~/.local/share/Trash` via Freedesktop spec) with full confirmation dialogs, so mistakes are easily undone.
 
@@ -114,7 +114,7 @@ Most disk usage tools (`ncdu`, `dua`, `dust`) show you raw sizes, but leave you 
 | `D` (`Shift+D`) | Open permanent deletion confirmation (`rm -rf`) |
 | `E` (`Shift+E`) | Empty system and per-volume Trash (requires typing `EMPTY`) |
 | `w` | Open **Quick Wins** cleanup wizard |
-| `F` (`Shift+F`) | Open **Duplicate File Finder** & hardlink deduplicator |
+| `F` (`Shift+F`) | Open **Duplicate File Finder** (reflink CoW or hardlink deduplicator) |
 
 ### Sorting & Search
 | Key | Action |
@@ -143,11 +143,11 @@ spacer top 20 --path ~
 spacer clean --dry-run
 spacer clean --path ~
 
-# Scan for duplicates and print identical file clusters
+# Scan for duplicates in dry-run mode (default, no changes made)
 spacer dupes ~
 
-# Replace all duplicate files with hardlinks in one command
-spacer dupes /path/to/data --hardlink
+# Apply deduplication using CoW reflinks (or hardlinks where supported)
+spacer dupes /path/to/data --apply --hardlink --min-size 1M
 
 # Export full directory tree and waste scores for audits
 spacer export --path ~ --json report.json --csv report.csv

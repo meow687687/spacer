@@ -830,7 +830,7 @@ fn render_help_modal(frame: &mut Frame) {
         Line::from(""),
         Line::from(Span::styled("SMART CLEANUP & DEDUPLICATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
         Line::from("  w               : Open Smart 'Quick Wins' Cleanup Wizard"),
-        Line::from("  F (Shift+f)     : Open Duplicate File Finder & Hardlink Deduplicator"),
+        Line::from("  F (Shift+f)     : Open Duplicate File Finder (Reflink CoW & Hardlink Deduplicator)"),
         Line::from("  Space           : Toggle stage/unstage item for batch delete"),
         Line::from("  a               : Select/deselect all visible items"),
         Line::from("  c               : Clear all staged items"),

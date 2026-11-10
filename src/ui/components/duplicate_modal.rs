@@ -138,10 +138,14 @@ pub fn render_duplicate_modal(
     // 3. Actions
     let actions = vec![
         Line::from(vec![
-            Span::styled(" [h] ", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
-            Span::styled("Hardlink this cluster │ ", Style::default().fg(Color::White)),
-            Span::styled("[H] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-            Span::styled("Hardlink ALL duplicates (Reclaim 100% space) │ ", Style::default().fg(Color::White)),
+            Span::styled(" [r] ", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
+            Span::styled("Reflink cluster │ ", Style::default().fg(Color::White)),
+            Span::styled("[h] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("Hardlink cluster │ ", Style::default().fg(Color::White)),
+            Span::styled("[R] ", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
+            Span::styled("Reflink ALL │ ", Style::default().fg(Color::White)),
+            Span::styled("[H] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("Hardlink ALL │ ", Style::default().fg(Color::White)),
             Span::styled("[Esc] ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
             Span::styled("Close", Style::default().fg(Color::DarkGray)),
         ]),

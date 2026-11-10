@@ -1,7 +1,8 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use std::time::Duration;
-use crate::analysis::duplicate::replace_with_hardlinks;
+use crate::analysis::duplicate::{deduplicate_all, deduplicate_group, DedupOptions, RealDedupOps};
 use crate::fs::deleter::{execute_batch_delete, DeleteMode};
+use crate::fs::model::FileItem;
 use crate::ui::app::{App, ModalState};
 
 pub fn handle_events(app: &mut App) -> std::io::Result<()> {
@@ -154,26 +155,80 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                         *selected_path_idx = 0;
                     }
                 }
+                KeyCode::Char('r') => {
+                    if let Some(group) = report.groups.get(*selected_group_idx) {
+                        let opts = DedupOptions {
+                            allow_hardlink: false,
+                            dry_run: false,
+                            min_size: 1_048_576,
+                        };
+                        let res = deduplicate_group(group, *selected_group_idx + 1, &opts);
+                        if !res.processed.is_empty() {
+                            *status_msg = Some(format!(
+                                "✓ Reflinked {} files in cluster #{} (+{} reclaimed)",
+                                res.processed.len(),
+                                *selected_group_idx + 1,
+                                FileItem::format_size(res.total_bytes_reclaimed)
+                            ));
+                        } else if let Some(skip) = res.skipped.first() {
+                            *status_msg = Some(format!("⚠️ Skipped: {}", skip.reason));
+                        } else {
+                            *status_msg = Some("No duplicates could be reflinked in this cluster.".into());
+                        }
+                    }
+                }
+                KeyCode::Char('R') => {
+                    let opts = DedupOptions {
+                        allow_hardlink: false,
+                        dry_run: false,
+                        min_size: 1_048_576,
+                    };
+                    let run_report = deduplicate_all(report, &opts, &RealDedupOps);
+                    *status_msg = Some(format!(
+                        "✓ Reflinked {} files across {} clusters (+{} reclaimed, {} skipped)",
+                        run_report.total_files_processed,
+                        run_report.clusters.len(),
+                        FileItem::format_size(run_report.total_bytes_reclaimed),
+                        run_report.total_files_skipped
+                    ));
+                }
                 KeyCode::Char('h') => {
                     if let Some(group) = report.groups.get(*selected_group_idx) {
-                        match replace_with_hardlinks(group) {
-                            Ok(count) => {
-                                *status_msg = Some(format!("✓ Successfully hardlinked {} duplicate files in cluster #{}!", count, *selected_group_idx + 1));
-                            }
-                            Err(e) => {
-                                *status_msg = Some(format!("⚠️ Hardlink error: {}", e));
-                            }
+                        let opts = DedupOptions {
+                            allow_hardlink: true,
+                            dry_run: false,
+                            min_size: 1_048_576,
+                        };
+                        let res = deduplicate_group(group, *selected_group_idx + 1, &opts);
+                        if !res.processed.is_empty() {
+                            *status_msg = Some(format!(
+                                "✓ Deduplicated {} files in cluster #{} ({:?}, +{} reclaimed)",
+                                res.processed.len(),
+                                *selected_group_idx + 1,
+                                res.processed[0].method,
+                                FileItem::format_size(res.total_bytes_reclaimed)
+                            ));
+                        } else if let Some(skip) = res.skipped.first() {
+                            *status_msg = Some(format!("⚠️ Skipped: {}", skip.reason));
+                        } else {
+                            *status_msg = Some("No duplicates could be deduplicated in this cluster.".into());
                         }
                     }
                 }
                 KeyCode::Char('H') => {
-                    let mut total = 0;
-                    for group in &report.groups {
-                        if let Ok(count) = replace_with_hardlinks(group) {
-                            total += count;
-                        }
-                    }
-                    *status_msg = Some(format!("✓ Successfully hardlinked ALL {} duplicate files!", total));
+                    let opts = DedupOptions {
+                        allow_hardlink: true,
+                        dry_run: false,
+                        min_size: 1_048_576,
+                    };
+                    let run_report = deduplicate_all(report, &opts, &RealDedupOps);
+                    *status_msg = Some(format!(
+                        "✓ Deduplicated {} files across {} clusters (+{} reclaimed, {} skipped)",
+                        run_report.total_files_processed,
+                        run_report.clusters.len(),
+                        FileItem::format_size(run_report.total_bytes_reclaimed),
+                        run_report.total_files_skipped
+                    ));
                 }
                 KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
                     app.active_modal = ModalState::None;
