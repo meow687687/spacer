@@ -89,15 +89,27 @@ enum Commands {
         force: bool,
     },
 
-    /// Find duplicate files using 3-stage hashing and optionally deduplicate with hardlinks
+    /// Find duplicate files using 3-stage hashing and safely deduplicate via reflink or hardlink
     Dupes {
         /// Target path to scan (defaults to current directory)
         #[arg(default_value = ".")]
         path: PathBuf,
 
-        /// Automatically replace all duplicate copies with hardlinks (ln -f)
+        /// Apply deduplication changes (default is dry-run)
+        #[arg(long)]
+        apply: bool,
+
+        /// Explicitly run in dry-run mode (default behavior)
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Allow hardlink deduplication if reflink/clone is unsupported on the filesystem
         #[arg(short = 'H', long)]
         hardlink: bool,
+
+        /// Minimum file size threshold for deduplication [default: 1M]
+        #[arg(long, default_value = "1M")]
+        min_size: String,
     },
 
     /// List top largest storage consumers and waste candidates
@@ -137,8 +149,16 @@ fn main() -> anyhow::Result<()> {
             Commands::Clean { path, dry_run, force } => {
                 return cli::clean::run_clean_command(&path, dry_run, force);
             }
-            Commands::Dupes { path, hardlink } => {
-                return cli::dupes::run_dupes_command(&path, hardlink);
+            Commands::Dupes {
+                path,
+                apply,
+                dry_run,
+                hardlink,
+                min_size,
+            } => {
+                let min_size_bytes = cli::dupes::parse_size_string(&min_size)?;
+                let is_dry_run = !apply || dry_run;
+                return cli::dupes::run_dupes_command(&path, is_dry_run, hardlink, min_size_bytes);
             }
             Commands::Top { path, count } => {
                 return cli::top::run_top_command(&path, count);
