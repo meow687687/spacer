@@ -65,7 +65,7 @@ pub fn run_top_command(root: &Path, count: usize) -> Result<()> {
             format!("#{}", idx + 1),
             item.formatted_size(),
             item.category.badge(),
-            item.score.total_score.round() as u64,
+            item.score.score.round() as u64,
             type_icon,
             item.path.display()
         );

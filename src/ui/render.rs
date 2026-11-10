@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 use crate::fs::deleter::DeleteMode;
-use crate::fs::model::{Category, FileItem};
+use crate::fs::model::{Category, FileItem, SafetyLevel};
 use crate::ui::app::{App, ModalState, ViewMode};
 use crate::ui::components::cleaner_modal::render_cleaner_modal;
 use crate::ui::components::duplicate_modal::render_duplicate_modal;
@@ -209,7 +209,7 @@ fn render_explorer(frame: &mut Frame, app: &App, area: Rect) {
             );
 
             // Waste score badge
-            let score_val = item.score.total_score.round() as u64;
+            let score_val = item.score.score.round() as u64;
             let score_color = if score_val >= 80 {
                 Color::Red
             } else if score_val >= 50 {
@@ -342,7 +342,13 @@ fn render_inspector(frame: &mut Frame, app: &App, area: Rect) {
     // 2. Prioritization Scorecard Box
     if let Some(item) = selected {
         let score = &item.score;
-        let score_val = score.total_score.round() as u64;
+        let score_val = score.score.round() as u64;
+
+        let safety_color = match score.safety {
+            SafetyLevel::Safe => Color::LightGreen,
+            SafetyLevel::Review => Color::Yellow,
+            SafetyLevel::Keep => Color::Cyan,
+        };
 
         let verdict_color = if score_val >= 80 {
             Color::Red
@@ -352,50 +358,59 @@ fn render_inspector(frame: &mut Frame, app: &App, area: Rect) {
             Color::Green
         };
 
-        let verdict_text = if score_val >= 80 {
-            "🔥 HIGH WASTE PRIORITY"
-        } else if score_val >= 50 {
-            "⚡ MODERATE CANDIDATE"
-        } else {
-            "✓ LOW WASTE PRIORITY"
-        };
-
-        let scorecard_lines = vec![
+        let mut scorecard_lines = vec![
             Line::from(vec![
                 Span::styled("Waste Rating: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(format!("{}/100 ", score_val), Style::default().fg(verdict_color).add_modifier(Modifier::BOLD)),
-                Span::styled(verdict_text, Style::default().fg(verdict_color).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("• Size Impact (45%):     ", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("{:.0}/100 ", score.size_score), Style::default().fg(Color::White)),
-                Span::styled(make_meter(score.size_score), Style::default().fg(Color::LightBlue)),
-            ]),
-            Line::from(vec![
-                Span::styled("• Inactivity/Age (30%):  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("{:.0}/100 ", score.age_score), Style::default().fg(Color::White)),
-                Span::styled(make_meter(score.age_score), Style::default().fg(Color::Yellow)),
-            ]),
-            Line::from(vec![
-                Span::styled("• Category Type (25%):   ", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("{:.0}/100 ", score.category_score), Style::default().fg(Color::White)),
-                Span::styled(make_meter(score.category_score), Style::default().fg(Color::Magenta)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Recommendation: ", Style::default().fg(Color::DarkGray)),
-            ]),
-            Line::from(vec![
-                Span::styled(format!("💡 {}", score.recommendation), Style::default().fg(Color::White).add_modifier(Modifier::ITALIC)),
+                Span::styled(format!("[{}] ", score.safety.badge()), Style::default().fg(safety_color).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("({})", score.safety.label()), Style::default().fg(Color::DarkGray)),
             ]),
         ];
+
+        if let Some(ref proj) = score.project_info {
+            scorecard_lines.push(Line::from(vec![
+                Span::styled("Project Context: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(proj.clone(), Style::default().fg(Color::LightCyan)),
+            ]));
+        }
+
+        scorecard_lines.push(Line::from(""));
+        scorecard_lines.push(Line::from(vec![
+            Span::styled("• Size Footprint:       ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{:.0}/100 ", score.size_score), Style::default().fg(Color::White)),
+            Span::styled(make_meter(score.size_score), Style::default().fg(Color::LightBlue)),
+        ]));
+        scorecard_lines.push(Line::from(vec![
+            Span::styled("• Project Staleness:    ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{:.0}/100 ", score.age_score), Style::default().fg(Color::White)),
+            Span::styled(make_meter(score.age_score), Style::default().fg(Color::Yellow)),
+        ]));
+        scorecard_lines.push(Line::from(vec![
+            Span::styled("• Category Weight:      ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{:.0}/100 ", score.category_score), Style::default().fg(Color::White)),
+            Span::styled(make_meter(score.category_score), Style::default().fg(Color::Magenta)),
+        ]));
+
+        if !score.reasons.is_empty() {
+            scorecard_lines.push(Line::from(""));
+            scorecard_lines.push(Line::from(Span::styled("Why this score & safety level:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
+            for reason in &score.reasons {
+                let color = if reason.starts_with("⚠️") {
+                    Color::LightRed
+                } else if reason.contains("rebuilt") || reason.contains("Lockfile present") || reason.contains("Cargo.lock") {
+                    Color::LightGreen
+                } else {
+                    Color::White
+                };
+                scorecard_lines.push(Line::from(Span::styled(format!("  • {}", reason), Style::default().fg(color))));
+            }
+        }
 
         let scorecard_block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .title(" Deletion Priority Scorecard ")
-            .border_style(Style::default().fg(verdict_color));
+            .border_style(Style::default().fg(safety_color));
 
         let scorecard_p = Paragraph::new(scorecard_lines)
             .block(scorecard_block)

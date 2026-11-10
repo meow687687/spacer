@@ -63,7 +63,7 @@ pub fn run_export_command(
                 size_bytes: size,
                 size_formatted: FileItem::format_size(size),
                 category: category.label().to_string(),
-                waste_score: score.total_score.round() as u64,
+                waste_score: score.score.round() as u64,
             });
         }
     }

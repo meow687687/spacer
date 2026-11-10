@@ -346,7 +346,7 @@ impl App {
             }
             SortMode::ScoreDesc => {
                 self.items.sort_by(|a, b| {
-                    b.score.total_score.partial_cmp(&a.score.total_score).unwrap_or(std::cmp::Ordering::Equal)
+                    b.score.score.partial_cmp(&a.score.score).unwrap_or(std::cmp::Ordering::Equal)
                         .then_with(|| b.size.cmp(&a.size))
                 });
             }
