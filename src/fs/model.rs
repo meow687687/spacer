@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
 use chrono::{DateTime, Local};
+pub use crate::fs::scorer::{SafetyLevel, WasteScore};
+
+pub type ScoreBreakdown = WasteScore;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Category {
@@ -42,15 +45,6 @@ impl Category {
             Category::Other => "FILE",
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ScoreBreakdown {
-    pub size_score: f64,
-    pub age_score: f64,
-    pub category_score: f64,
-    pub total_score: f64,
-    pub recommendation: String,
 }
 
 #[derive(Debug, Clone)]
