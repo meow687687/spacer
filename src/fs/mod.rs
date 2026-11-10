@@ -8,3 +8,4 @@ pub mod logger;
 pub mod processes;
 pub mod statvfs;
 pub mod trash;
+pub mod config;
