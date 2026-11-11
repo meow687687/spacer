@@ -16,6 +16,7 @@ pub enum SortMode {
     SizeDesc,
     ScoreDesc,
     AgeDesc,
+    GrowthDesc,
     NameAsc,
 }
 
@@ -25,6 +26,7 @@ impl SortMode {
             SortMode::SizeDesc => "SIZE",
             SortMode::ScoreDesc => "PRIORITY",
             SortMode::AgeDesc => "AGE",
+            SortMode::GrowthDesc => "GROWTH",
             SortMode::NameAsc => "NAME",
         }
     }
@@ -88,6 +90,8 @@ pub struct App {
     pub should_quit: bool,
     pub available_update: Option<UpdateInfo>,
     pub snapshot_warning: Option<String>,
+    pub previous_snapshot_sizes: std::collections::HashMap<PathBuf, u64>,
+    pub last_snapshot_info: Option<(i64, String)>,
     
     // Channels
     pub scan_tx: Sender<ScanMsg>,
@@ -126,6 +130,8 @@ impl App {
             should_quit: false,
             available_update: None,
             snapshot_warning: crate::fs::statvfs::detect_btrfs_and_snapshots(&canonical_path),
+            previous_snapshot_sizes: std::collections::HashMap::new(),
+            last_snapshot_info: None,
             scan_tx: tx.clone(),
             scan_rx: rx,
             update_rx,
@@ -135,7 +141,32 @@ impl App {
         app
     }
 
+    pub fn load_previous_snapshot(&mut self, path: &std::path::Path) {
+        if let Ok(conn) = crate::history::open_or_create_db(&crate::history::default_db_path())
+            && let Ok(scans) = crate::history::db::list_scans(&conn, Some(path))
+            && let Some(latest) = scans.first()
+            && let Ok(dirs) = crate::history::db::get_scan_directories(&conn, latest.id)
+        {
+            let mut map = std::collections::HashMap::new();
+            for (p_str, dir_rec) in dirs {
+                map.insert(PathBuf::from(p_str), dir_rec.size_bytes);
+            }
+            self.previous_snapshot_sizes = map;
+            self.last_snapshot_info = Some((latest.id, latest.timestamp.clone()));
+            return;
+        }
+        self.previous_snapshot_sizes.clear();
+        self.last_snapshot_info = None;
+    }
+
+    pub fn item_growth_delta(&self, item: &FileItem) -> Option<i64> {
+        self.previous_snapshot_sizes
+            .get(&item.path)
+            .map(|&prev_size| item.size as i64 - prev_size as i64)
+    }
+
     pub fn start_scan(&mut self, path: PathBuf) {
+        self.load_previous_snapshot(&path);
         self.is_scanning = true;
         self.scan_progress_text = "Scanning directory...".to_string();
         self.items.clear();
@@ -326,7 +357,8 @@ impl App {
         self.sort_mode = match self.sort_mode {
             SortMode::SizeDesc => SortMode::ScoreDesc,
             SortMode::ScoreDesc => SortMode::AgeDesc,
-            SortMode::AgeDesc => SortMode::NameAsc,
+            SortMode::AgeDesc => SortMode::GrowthDesc,
+            SortMode::GrowthDesc => SortMode::NameAsc,
             SortMode::NameAsc => SortMode::SizeDesc,
         };
         self.sort_items();
@@ -355,6 +387,14 @@ impl App {
                     let a_time = a.modified.map(|t| t.timestamp()).unwrap_or(0);
                     let b_time = b.modified.map(|t| t.timestamp()).unwrap_or(0);
                     a_time.cmp(&b_time).then_with(|| b.size.cmp(&a.size))
+                });
+            }
+            SortMode::GrowthDesc => {
+                let prev_sizes = &self.previous_snapshot_sizes;
+                self.items.sort_by(|a, b| {
+                    let delta_a = prev_sizes.get(&a.path).map(|&p| a.size as i64 - p as i64).unwrap_or(0);
+                    let delta_b = prev_sizes.get(&b.path).map(|&p| b.size as i64 - p as i64).unwrap_or(0);
+                    delta_b.cmp(&delta_a).then_with(|| b.size.cmp(&a.size))
                 });
             }
             SortMode::NameAsc => {

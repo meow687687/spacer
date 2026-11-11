@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -7,6 +8,7 @@ use walkdir::WalkDir;
 
 use crate::fs::model::{detect_category, FileItem, ScoreBreakdown};
 use crate::fs::scorer::calculate_score;
+use crate::history::record_scan_snapshot;
 
 #[derive(Debug, Clone)]
 pub enum ScanMsg {
@@ -109,10 +111,20 @@ pub fn scan_directory(root: &Path, tx: &Sender<ScanMsg>) {
     // 2. Perform deep scanning for directories
     let mut total_bytes: u64 = 0;
     let mut total_items: usize = 0;
+    let mut dir_sizes: HashMap<PathBuf, (u64, usize)> = HashMap::new();
+    let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    dir_sizes.insert(canonical_root.clone(), (0, 0));
 
     for (path, is_dir, modified, accessed, category) in direct_entries {
         if is_dir {
-            let (dir_size, dir_count) = compute_directory_size_deep(&path, tx, &mut total_items, &mut total_bytes);
+            let (dir_size, dir_count) = compute_directory_size_deep(
+                &path,
+                &canonical_root,
+                &mut dir_sizes,
+                tx,
+                &mut total_items,
+                &mut total_bytes,
+            );
             let score = calculate_score(&path, true, dir_size, modified, accessed, category);
 
             let _ = tx.send(ScanMsg::ItemUpdated {
@@ -125,8 +137,14 @@ pub fn scan_directory(root: &Path, tx: &Sender<ScanMsg>) {
             let file_len = meta.len();
             total_bytes += file_len;
             total_items += 1;
+            let root_stat = dir_sizes.entry(canonical_root.clone()).or_insert((0, 0));
+            root_stat.0 += file_len;
+            root_stat.1 += 1;
         }
     }
+
+    // Record snapshot to history database
+    let _ = record_scan_snapshot(&canonical_root, total_bytes, total_items, &dir_sizes);
 
     let _ = tx.send(ScanMsg::ScanFinished {
         root: root.to_path_buf(),
@@ -137,6 +155,8 @@ pub fn scan_directory(root: &Path, tx: &Sender<ScanMsg>) {
 
 fn compute_directory_size_deep(
     dir_path: &Path,
+    root: &Path,
+    dir_sizes: &mut HashMap<PathBuf, (u64, usize)>,
     tx: &Sender<ScanMsg>,
     global_items: &mut usize,
     global_bytes: &mut u64,
@@ -146,6 +166,7 @@ fn compute_directory_size_deep(
     let mut progress_counter = 0;
 
     let dir_name = dir_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+    dir_sizes.entry(dir_path.to_path_buf()).or_insert((0, 0));
 
     for entry in WalkDir::new(dir_path)
         .follow_links(false)
@@ -162,6 +183,18 @@ fn compute_directory_size_deep(
                 *global_items += 1;
                 progress_counter += 1;
 
+                // Propagate size up to parent directories and root
+                let mut curr_parent = entry.path().parent();
+                while let Some(parent) = curr_parent {
+                    let d = dir_sizes.entry(parent.to_path_buf()).or_insert((0, 0));
+                    d.0 += len;
+                    d.1 += 1;
+                    if parent == root {
+                        break;
+                    }
+                    curr_parent = parent.parent();
+                }
+
                 if progress_counter % 200 == 0 {
                     let _ = tx.send(ScanMsg::Progress {
                         scanned_count: *global_items,
@@ -169,9 +202,12 @@ fn compute_directory_size_deep(
                         current_name: dir_name.clone(),
                     });
                 }
-            } else if metadata.is_dir() && entry.path() != dir_path {
-                dir_count += 1;
-                *global_items += 1;
+            } else if metadata.is_dir() {
+                dir_sizes.entry(entry.path().to_path_buf()).or_insert((0, 0));
+                if entry.path() != dir_path {
+                    dir_count += 1;
+                    *global_items += 1;
+                }
             }
         }
     }

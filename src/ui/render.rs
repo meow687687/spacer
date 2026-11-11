@@ -203,6 +203,26 @@ fn render_explorer(frame: &mut Frame, app: &App, area: Rect) {
             let bar_str = format!("{}{}", "█".repeat(filled_len), "░".repeat(empty_len));
             let bar_span = Span::styled(bar_str, Style::default().fg(Color::Cyan));
 
+            // Growth delta span
+            let growth_span = match app.item_growth_delta(item) {
+                Some(delta) if delta > 0 => Span::styled(
+                    format!("{:>10}", format!("+{}", FileItem::format_size(delta as u64))),
+                    Style::default().fg(Color::LightRed),
+                ),
+                Some(delta) if delta < 0 => Span::styled(
+                    format!("{:>10}", format!("-{}", FileItem::format_size(delta.unsigned_abs()))),
+                    Style::default().fg(Color::LightGreen),
+                ),
+                Some(_) => Span::styled(
+                    format!("{:>10}", "0 B"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                None => Span::styled(
+                    format!("{:>10}", "―"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            };
+
             let size_span = Span::styled(
                 format!("{:>9}", item.formatted_size()),
                 Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
@@ -232,6 +252,7 @@ fn render_explorer(frame: &mut Frame, app: &App, area: Rect) {
                 Line::from(stage_span),
                 Line::from(name_span),
                 Line::from(badge_span),
+                Line::from(growth_span),
                 Line::from(bar_span),
                 Line::from(size_span),
                 Line::from(score_span),
@@ -243,6 +264,7 @@ fn render_explorer(frame: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(4),         // Stage check
         Constraint::Min(16),           // Name
         Constraint::Length(11),        // Category Tag
+        Constraint::Length(11),        // Growth Delta
         Constraint::Length(10),        // Graph Bar
         Constraint::Length(10),        // Size
         Constraint::Length(6),         // Waste Score
@@ -255,6 +277,7 @@ fn render_explorer(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled("Sel", Style::default().fg(Color::DarkGray)),
                 Span::styled("Name", Style::default().fg(Color::DarkGray)),
                 Span::styled("Tag", Style::default().fg(Color::DarkGray)),
+                Span::styled("Growth", Style::default().fg(Color::DarkGray)),
                 Span::styled("Graph", Style::default().fg(Color::DarkGray)),
                 Span::styled("Size", Style::default().fg(Color::DarkGray)),
                 Span::styled("Waste", Style::default().fg(Color::DarkGray)),
@@ -322,6 +345,21 @@ fn render_inspector(frame: &mut Frame, app: &App, area: Rect) {
                     item.accessed.map(|m| m.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_else(|| "Unknown".to_string()),
                     Style::default().fg(Color::LightBlue),
                 ),
+            ]),
+            Line::from(vec![
+                Span::styled("Growth Delta:  ", Style::default().fg(Color::DarkGray)),
+                match app.item_growth_delta(item) {
+                    Some(delta) if delta > 0 => Span::styled(
+                        format!("+{} (increased)", FileItem::format_size(delta as u64)),
+                        Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD),
+                    ),
+                    Some(delta) if delta < 0 => Span::styled(
+                        format!("-{} (shrunk)", FileItem::format_size(delta.unsigned_abs())),
+                        Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD),
+                    ),
+                    Some(_) => Span::styled("0 B (unchanged)", Style::default().fg(Color::White)),
+                    None => Span::styled("― (no previous snapshot)", Style::default().fg(Color::DarkGray)),
+                },
             ]),
         ]
     } else {

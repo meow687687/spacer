@@ -13,6 +13,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 mod analysis;
 mod cli;
 mod fs;
+mod history;
 mod ui;
 mod updater;
 
@@ -44,6 +45,8 @@ const HELP_EXAMPLES: &str = "\
   \x1b[1;32mspacer dupes ~ --hardlink\x1b[0m      Find duplicates and deduplicate with hardlinks (ln -f)
   \x1b[1;32mspacer top 20 --path /var\x1b[0m      List the 20 largest storage consumers in /var
   \x1b[1;32mspacer export --json out.json\x1b[0m  Export storage audit hierarchy and waste scores
+  \x1b[1;32mspacer diff --since 7d\x1b[0m        Show biggest storage growers and shrinkers
+  \x1b[1;32mspacer history --prune --keep 10\x1b[0m Prune older snapshots and keep 10 latest
   \x1b[1;32mspacer update\x1b[0m                  Check and update spacer to latest release
 
 \x1b[1;36mKEYBOARD SHORTCUTS IN TUI:\x1b[0m
@@ -137,6 +140,36 @@ enum Commands {
         #[arg(long)]
         csv: Option<PathBuf>,
     },
+
+    /// Compare storage changes between snapshots to find growers and shrinkers
+    Diff {
+        /// Target path to inspect
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Reference snapshot to diff against (scan ID e.g. 5, or duration e.g. 7d, 24h)
+        #[arg(short, long)]
+        since: Option<String>,
+
+        /// Output results as structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// List scan snapshot history or prune older snapshots
+    History {
+        /// Filter history by target path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Prune older snapshots
+        #[arg(long)]
+        prune: bool,
+
+        /// Number of recent snapshots to retain when pruning
+        #[arg(long, default_value_t = 10)]
+        keep: usize,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -169,6 +202,12 @@ fn main() -> anyhow::Result<()> {
                     return Ok(());
                 }
                 return cli::export::run_export_command(&path, json.as_deref(), csv.as_deref());
+            }
+            Commands::Diff { path, since, json } => {
+                return cli::diff::run_diff_command(path.as_deref(), since.as_deref(), json);
+            }
+            Commands::History { path, prune, keep } => {
+                return cli::history::run_history_command(path.as_deref(), prune, keep);
             }
         }
     }
