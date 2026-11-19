@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build-release:
@@ -40,9 +41,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+        # Reads rust-toolchain.toml so the version has one source of truth. The
+        # dtolnay action installs targets for its own toolchain, which would leave
+        # the pinned one without them.
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          toolchain="$(rustup show active-toolchain | cut -d' ' -f1)"
+          rustup target add --toolchain "$toolchain" "${{ matrix.target }}"
+          rustc --version
+          rustup target list --installed --toolchain "$toolchain"
+        shell: bash
 
       - name: Install cross
         if: matrix.cross
